@@ -3,20 +3,20 @@
 ## `.zshenv` 与 `.zshrc`
 
 ```zsh
-# >>> chatgpt-codex-primary >>>
-chatgpt_codex_primary_bin="$HOME/.local/share/chatgpt-codex-primary/current/bin"
-path=("$chatgpt_codex_primary_bin" ${path:#"$chatgpt_codex_primary_bin"})
+# >>> codex-app-server-bridge >>>
+codex_bridge_bin="$HOME/.local/share/codex-app-server-bridge/current/bin"
+path=("$codex_bridge_bin" ${path:#"$codex_bridge_bin"})
 export PATH
-unset chatgpt_codex_primary_bin
-# <<< chatgpt-codex-primary <<<
+unset codex_bridge_bin
+# <<< codex-app-server-bridge <<<
 ```
 
 ## `.zprofile`
 
 ```zsh
-# >>> chatgpt-codex-primary >>>
-export CODEX_CLI_PATH="$HOME/.local/share/chatgpt-codex-primary/current/bin/chatgpt-codex"
-export CODEX_INSTALL_DIR="$HOME/.local/share/chatgpt-codex-primary/current/bin"
+# >>> codex-app-server-bridge >>>
+export CODEX_CLI_PATH="$HOME/.local/share/codex-app-server-bridge/current/bin/codex-bridge-launcher"
+export CODEX_INSTALL_DIR="$HOME/.local/share/codex-app-server-bridge/current/bin"
 unset CODEX_APP_SERVER_USE_LOCAL_DAEMON
-# <<< chatgpt-codex-primary <<<
+# <<< codex-app-server-bridge <<<
 ```

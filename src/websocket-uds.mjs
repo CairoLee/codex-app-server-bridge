@@ -384,8 +384,8 @@ export async function probeAppServer(socketPath, options = {}) {
           id: requestId,
           params: {
             clientInfo: {
-              name: "chatgpt_codex_primary_probe",
-              title: "ChatGPT Codex Primary Probe",
+              name: "codex_app_server_bridge_probe",
+              title: "Codex App Server Bridge Probe",
               version: "1.0.0",
             },
           },

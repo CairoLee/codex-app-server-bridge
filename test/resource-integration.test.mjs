@@ -61,7 +61,7 @@ test(
   "真实 Resources/codex 完成 supervisor、Unix socket 和 stdio 桥接",
   { skip: !enabled, timeout: 60_000 },
   async (context) => {
-    const temporaryDirectory = await fs.mkdtemp("/tmp/chatgpt-codex-primary-integration-");
+    const temporaryDirectory = await fs.mkdtemp("/tmp/codex-app-server-bridge-integration-");
     const stateDirectory = path.join(temporaryDirectory, "state");
     const codexHome = path.join(temporaryDirectory, "home");
     const appToolsPipe = path.join(temporaryDirectory, "app-tools.sock");
@@ -92,11 +92,11 @@ test(
       ...process.env,
       CODEX_HOME: codexHome,
       CODEX_APP_TOOLS_PIPE_PATH: appToolsPipe,
-      CHATGPT_CODEX_PRIMARY_STATE_DIR: stateDirectory,
-      CHATGPT_CODEX_PRIMARY_SOCKET: path.join(stateDirectory, "app-server.sock"),
-      CHATGPT_CODEX_RESOURCE_PATH: resourceCodex,
-      CHATGPT_CODEX_NODE_PATH: bundledNode,
-      CHATGPT_CODEX_OWNER_PID: String(process.pid),
+      CODEX_BRIDGE_STATE_DIR: stateDirectory,
+      CODEX_BRIDGE_SOCKET: path.join(stateDirectory, "app-server.sock"),
+      CODEX_BRIDGE_RESOURCE_PATH: resourceCodex,
+      CODEX_BRIDGE_NODE_PATH: bundledNode,
+      CODEX_BRIDGE_OWNER_PID: String(process.pid),
     };
     const launcher = spawn(bundledNode, [
       launcherPath,
@@ -147,7 +147,7 @@ test(
     assert.equal(state.ownerPid, process.pid);
     assert.equal(state.resourceCodexPath, resourceCodex);
 
-    const status = spawn(bundledNode, [statusPath], {
+    const status = spawn(bundledNode, [statusPath, "--json"], {
       env,
       stdio: ["ignore", "pipe", "pipe"],
     });

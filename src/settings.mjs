@@ -12,22 +12,22 @@ export function codexHome(env = process.env) {
 }
 
 export function stateDirectory(env = process.env) {
-  const configured = env.CHATGPT_CODEX_PRIMARY_STATE_DIR?.trim();
-  return configured || path.join(codexHome(env), "chatgpt-primary");
+  const configured = env.CODEX_BRIDGE_STATE_DIR?.trim();
+  return configured || path.join(codexHome(env), "codex-app-server-bridge");
 }
 
 export function socketPath(env = process.env) {
-  const configured = env.CHATGPT_CODEX_PRIMARY_SOCKET?.trim();
+  const configured = env.CODEX_BRIDGE_SOCKET?.trim();
   return configured || path.join(stateDirectory(env), "app-server.sock");
 }
 
 export function resourceCodexPath(env = process.env) {
-  const configured = env.CHATGPT_CODEX_RESOURCE_PATH?.trim();
+  const configured = env.CODEX_BRIDGE_RESOURCE_PATH?.trim();
   return configured || "/Applications/ChatGPT.app/Contents/Resources/codex";
 }
 
 export function bundledNodePath(env = process.env) {
-  const configured = env.CHATGPT_CODEX_NODE_PATH?.trim();
+  const configured = env.CODEX_BRIDGE_NODE_PATH?.trim();
   return (
     configured ||
     "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node"
@@ -54,7 +54,7 @@ export function runtimePaths(env = process.env) {
   };
 }
 
-export const stateMagic = "chatgpt-codex-primary-v1";
+export const stateMagic = "codex-app-server-bridge-v1";
 
 export const sysexits = {
   unavailable: 69,

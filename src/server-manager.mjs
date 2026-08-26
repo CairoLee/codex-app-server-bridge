@@ -10,7 +10,7 @@ import {
   signalVerifiedProcess,
   waitForProcessExit,
 } from "./process-utils.mjs";
-import { primaryStatus } from "./primary-state.mjs";
+import { bridgeStatus } from "./bridge-state.mjs";
 import {
   bundledNodePath,
   resourceCodexPath,
@@ -70,7 +70,7 @@ async function waitForGeneration(env, generation, timeoutMs = 20_000) {
       throw new Error(state.error || "shared App Server failed to start");
     }
     if (state?.generation === generation && state.status === "ready") {
-      const status = await primaryStatus(env, { timeoutMs: 2_500 });
+      const status = await bridgeStatus(env, { timeoutMs: 2_500 });
       if (status.ok) return status;
       lastReason = status.reason;
     }
@@ -97,7 +97,7 @@ export async function ensureSharedServer({ args, env = process.env, ownerPid }) 
       existing.launchKey === expectedLaunchKey &&
       existing.ownerPid === ownerPid
     ) {
-      const status = await primaryStatus(env);
+      const status = await bridgeStatus(env);
       if (status.ok) return status;
     }
 

@@ -92,11 +92,9 @@ async function stageRelease({ projectRoot, releasesDirectory, releaseDirectory, 
       );
     }
     for (const executable of [
-      "bin/chatgpt-codex",
-      "bin/chatgpt-codex-inst",
-      "bin/chatgpt-codex-uninst",
+      "bin/codex-bridge",
+      "bin/codex-bridge-launcher",
       "bin/codex",
-      "bin/codex-chatgpt-status",
       "bin/codex-standalone",
       "launchd/set-launchd-env.zsh",
       "scripts/install.mjs",

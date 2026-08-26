@@ -8,13 +8,13 @@ import {
   stateMagic,
 } from "./settings.mjs";
 
-export async function readPrimaryState(env = process.env) {
+export async function readBridgeState(env = process.env) {
   return await readJson(runtimePaths(env).statePath);
 }
 
-export async function primaryStatus(env = process.env, options = {}) {
+export async function bridgeStatus(env = process.env, options = {}) {
   const paths = runtimePaths(env);
-  const state = await readPrimaryState(env).catch((error) => ({ readError: error }));
+  const state = await readBridgeState(env).catch((error) => ({ readError: error }));
   if (state?.readError) {
     return { ok: false, reason: `state file is unreadable: ${state.readError.message}` };
   }

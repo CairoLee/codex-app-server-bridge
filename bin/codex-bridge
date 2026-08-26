@@ -1,0 +1,41 @@
+#!/bin/zsh
+set -eu
+
+tool_root="${0:A:h:h}"
+node_path="${CODEX_BRIDGE_NODE_PATH:-/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node}"
+subcommand="${1:-help}"
+
+if (( $# > 0 )); then
+  shift
+fi
+
+case "$subcommand" in
+  inst)
+    exec "$node_path" "$tool_root/scripts/inst.mjs" "$@"
+    ;;
+  uninst)
+    exec "$node_path" "$tool_root/scripts/uninst.mjs" "$@"
+    ;;
+  status)
+    exec "$node_path" "$tool_root/src/status.mjs" "$@"
+    ;;
+  logs)
+    exec "$node_path" "$tool_root/src/logs.mjs" "$@"
+    ;;
+  help|-h|--help)
+    print -r -- "Codex App Server Bridge"
+    print -r -- ""
+    print -r -- "用法：codex-bridge <命令>"
+    print -r -- ""
+    print -r -- "  status   查看共享 Codex App Server 状态"
+    print -r -- "  inst     安装或升级"
+    print -r -- "  uninst   解除安装"
+    print -r -- "  logs     查看操作日志"
+    print -r -- "  help     显示此帮助"
+    ;;
+  *)
+    print -u2 -r -- "无法识别的命令：$subcommand"
+    print -u2 -r -- "运行 codex-bridge help 查看可用命令。"
+    exit 78
+    ;;
+esac

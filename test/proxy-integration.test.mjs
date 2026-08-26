@@ -16,7 +16,7 @@ const resourceCodex = "/Applications/ChatGPT.app/Contents/Resources/codex";
 const execFileAsync = promisify(execFile);
 
 function spawnProxy() {
-  const executable = process.env.CHATGPT_CODEX_PROXY_EXECUTABLE?.trim();
+  const executable = process.env.CODEX_BRIDGE_PROXY_EXECUTABLE?.trim();
   if (executable) {
     return spawn(executable, ["app-server", "proxy"], {
       env: process.env,
@@ -84,8 +84,8 @@ test(
       method: "initialize",
       params: {
         clientInfo: {
-          name: "chatgpt_codex_primary_proxy_test",
-          title: "ChatGPT Codex Primary Proxy Test",
+          name: "codex_app_server_bridge_proxy_test",
+          title: "Codex App Server Bridge Proxy Test",
           version: "1.0.0",
         },
         capabilities: { experimentalApi: true, requestAttestation: false },

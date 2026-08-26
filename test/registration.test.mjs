@@ -8,6 +8,7 @@ import { installRuntime } from "../scripts/lib/runtime-install.mjs";
 import {
   markerEnd,
   markerStart,
+  legacyMarkerPairs,
   readRegistrationReceipt,
   registerLocalCodexEntrypoint,
   registrationPaths,
@@ -35,7 +36,7 @@ test("运行时安装按内容复用发布目录", async (context) => {
   assert.equal(second.activated, false);
   assert.equal(first.releaseDirectory, second.releaseDirectory);
   assert.equal(await fs.readlink(path.join(installRoot, "current")), `releases/${first.runtimeHash}`);
-  for (const executable of ["chatgpt-codex-inst", "chatgpt-codex-uninst"]) {
+  for (const executable of ["codex-bridge", "codex-bridge-launcher"]) {
     const metadata = await fs.stat(path.join(first.releaseDirectory, "bin", executable));
     assert.notEqual(metadata.mode & 0o111, 0, `${executable} 应可执行`);
   }
@@ -48,6 +49,7 @@ test("安装可重复执行且所有持久配置只引用安装目录", async (c
   const paths = registrationPaths({ homeDirectory, installRoot });
   await fs.writeFile(paths.profilePaths.zshenv, "export KEEP_ME=yes\n", "utf8");
   await fs.mkdir(paths.launchAgentsDirectory, { recursive: true });
+  await fs.writeFile(paths.legacyLaunchAgentPlistPaths[0], "legacy", "utf8");
 
   const first = await writeRegistrationFiles(paths);
   const second = await writeRegistrationFiles(paths);
@@ -63,13 +65,14 @@ test("安装可重复执行且所有持久配置只引用安装目录", async (c
   assert.match(zprofile, /CODEX_INSTALL_DIR/u);
   assert.match(zprofile, new RegExp(installRoot.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&"), "u"));
   assert.doesNotMatch(zprofile, new RegExp(projectRoot, "u"));
-  assert.match(plist, /local\.chatgpt-codex-primary\.env/u);
+  assert.match(plist, /local\.codex-app-server-bridge\.env/u);
+  await assert.rejects(fs.access(paths.legacyLaunchAgentPlistPaths[0]));
 });
 
 test("安装接管 standalone 固定入口且卸载恢复原 symlink", async (context) => {
   const homeDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "entrypoint-test-"));
   context.after(() => fs.rm(homeDirectory, { recursive: true, force: true }));
-  const installRoot = path.join(homeDirectory, ".local", "share", "chatgpt-codex-primary");
+  const installRoot = path.join(homeDirectory, ".local", "share", "codex-app-server-bridge");
   const paths = registrationPaths({ homeDirectory, installRoot });
   const standaloneTarget = path.join(
     homeDirectory,
@@ -118,7 +121,7 @@ test("安装拒绝覆盖未知的本地 Codex 入口", async (context) => {
 test("卸载只移除托管配置并保留运行时和用户内容", async (context) => {
   const homeDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "unregister-test-"));
   context.after(() => fs.rm(homeDirectory, { recursive: true, force: true }));
-  const installRoot = path.join(homeDirectory, ".local", "share", "chatgpt-codex-primary");
+  const installRoot = path.join(homeDirectory, ".local", "share", "codex-app-server-bridge");
   const paths = registrationPaths({ homeDirectory, installRoot });
   const sentinel = path.join(installRoot, "runtime-sentinel");
   await fs.mkdir(installRoot, { recursive: true });
@@ -130,8 +133,73 @@ test("卸载只移除托管配置并保留运行时和用户内容", async (cont
 
   const zshrc = await fs.readFile(paths.profilePaths.zshrc, "utf8");
   assert.match(zshrc, /export KEEP_ME=yes/u);
-  assert.doesNotMatch(zshrc, /chatgpt-codex-primary/u);
+  assert.doesNotMatch(zshrc, /codex-app-server-bridge|chatgpt-codex-primary/u);
   assert.equal(await fs.readFile(sentinel, "utf8"), "preserve");
   await assert.rejects(fs.access(paths.launchAgentPlistPath));
   await assert.rejects(fs.access(paths.receiptPath));
+});
+
+test("安装可从旧项目名迁移并保留 standalone 恢复信息", async (context) => {
+  const homeDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "legacy-migration-test-"));
+  context.after(() => fs.rm(homeDirectory, { recursive: true, force: true }));
+  const paths = registrationPaths({ homeDirectory });
+  const standaloneTarget = path.join(
+    homeDirectory,
+    ".codex",
+    "packages",
+    "standalone",
+    "current",
+    "bin",
+    "codex",
+  );
+  const legacyManagedTarget = paths.legacyManagedCodexPaths[0];
+  const legacyReceiptPath = paths.legacyReceiptPaths[0];
+  const legacyMarker = legacyMarkerPairs[0];
+  await fs.mkdir(paths.localBinDirectory, { recursive: true });
+  await fs.symlink(legacyManagedTarget, paths.localCodexPath);
+  await fs.mkdir(path.dirname(legacyReceiptPath), { recursive: true });
+  await fs.writeFile(
+    legacyReceiptPath,
+    `${JSON.stringify({
+      schemaVersion: 2,
+      cliPath: paths.legacyCliPaths[0],
+      localCodexEntrypoint: {
+        path: paths.localCodexPath,
+        managedTarget: legacyManagedTarget,
+        original: { kind: "symlink", target: standaloneTarget },
+      },
+    })}\n`,
+    "utf8",
+  );
+  await fs.writeFile(
+    paths.profilePaths.zshrc,
+    [
+      "export KEEP_ME=yes",
+      legacyMarker.start,
+      "export OLD_BRIDGE=yes",
+      legacyMarker.end,
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+
+  const migration = await registerLocalCodexEntrypoint(paths);
+  await writeRegistrationFiles(paths);
+  const receipt = await readRegistrationReceipt(paths);
+  const zshrc = await fs.readFile(paths.profilePaths.zshrc, "utf8");
+
+  assert.equal(migration.changed, true);
+  assert.equal(await fs.readlink(paths.localCodexPath), paths.managedCodexPath);
+  assert.deepEqual(receipt.localCodexEntrypoint.original, {
+    kind: "symlink",
+    target: standaloneTarget,
+  });
+  assert.match(zshrc, /export KEEP_ME=yes/u);
+  assert.match(zshrc, /codex-app-server-bridge/u);
+  assert.doesNotMatch(zshrc, /chatgpt-codex-primary|OLD_BRIDGE/u);
+  await assert.rejects(fs.access(legacyReceiptPath));
+
+  const restoration = await restoreLocalCodexEntrypoint(paths, receipt);
+  assert.equal(restoration.changed, true);
+  assert.equal(await fs.readlink(paths.localCodexPath), standaloneTarget);
 });

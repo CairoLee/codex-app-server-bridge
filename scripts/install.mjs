@@ -8,8 +8,8 @@ const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDirectory, "..");
 const homeDirectory = process.env.HOME?.trim() || os.homedir();
 const installRoot =
-  process.env.CHATGPT_CODEX_INSTALL_ROOT?.trim() ||
-  path.join(homeDirectory, ".local", "share", "chatgpt-codex-primary");
+  process.env.CODEX_BRIDGE_INSTALL_ROOT?.trim() ||
+  path.join(homeDirectory, ".local", "share", "codex-app-server-bridge");
 
 const result = await installRuntime({ projectRoot, installRoot });
 process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

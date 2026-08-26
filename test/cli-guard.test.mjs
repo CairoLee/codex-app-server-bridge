@@ -25,8 +25,8 @@ test("共享 App Server 不存在时阻止普通 Codex 启动", async () => {
   try {
     const result = await runGuard(["hello"], {
       ...process.env,
-      CHATGPT_CODEX_PRIMARY_STATE_DIR: temporaryDirectory,
-      CHATGPT_CODEX_RESOURCE_PATH: "/nonexistent/resource-codex",
+      CODEX_BRIDGE_STATE_DIR: temporaryDirectory,
+      CODEX_BRIDGE_RESOURCE_PATH: "/nonexistent/resource-codex",
     });
     assert.equal(result.code, 69);
     assert.match(result.stderr, /只使用 ChatGPT Desktop/u);
@@ -47,8 +47,8 @@ test("Remote SSH proxy 在共享 App Server 不存在时失败关闭", async () 
   try {
     const result = await runGuard(["app-server", "proxy"], {
       ...process.env,
-      CHATGPT_CODEX_PRIMARY_STATE_DIR: temporaryDirectory,
-      CHATGPT_CODEX_RESOURCE_PATH: "/nonexistent/resource-codex",
+      CODEX_BRIDGE_STATE_DIR: temporaryDirectory,
+      CODEX_BRIDGE_RESOURCE_PATH: "/nonexistent/resource-codex",
     });
     assert.equal(result.code, 69);
     assert.match(result.stderr, /请先启动或重新启动 ChatGPT Desktop/u);

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { primaryStatus } from "./primary-state.mjs";
+import { bridgeStatus } from "./bridge-state.mjs";
 import {
   resourceCodexPath,
   runtimePaths,
@@ -147,7 +147,7 @@ function printUnavailable(reason) {
       "Codex 已配置为只使用 ChatGPT Desktop 的共享 App Server。",
       `当前不可用：${reason}。`,
       "请先启动或重新启动 ChatGPT Desktop，然后重试。",
-      `状态检查：codex-chatgpt-status`,
+      `状态检查：codex-bridge status`,
       `如确实要绕过此保护，请显式使用：codex-standalone`,
       "",
     ].join("\n"),
@@ -158,7 +158,7 @@ const command = topLevelCommand(args);
 const positional = positionalArguments(args);
 const isAppServerProxy = command === "app-server" && positional[1] === "proxy";
 if (isAppServerProxy) {
-  const status = await primaryStatus();
+  const status = await bridgeStatus();
   if (!status.ok) {
     printUnavailable(status.reason);
     process.exitCode = sysexits.unavailable;
@@ -183,9 +183,9 @@ if (isAppServerProxy) {
 ) {
   await run(resourceCodexPath(), args);
 } else {
-  const needsPrimary =
+  const needsBridge =
     command == null || remoteCommands.has(command) || agentCommandsWithoutAppServer.has(command);
-  if (!needsPrimary) {
+  if (!needsBridge) {
     await run(resourceCodexPath(), args);
   } else if (hasExplicitRemote(args)) {
     process.stderr.write(
@@ -193,7 +193,7 @@ if (isAppServerProxy) {
     );
     process.exitCode = sysexits.config;
   } else {
-    const status = await primaryStatus();
+    const status = await bridgeStatus();
     if (!status.ok) {
       printUnavailable(status.reason);
       process.exitCode = sysexits.unavailable;

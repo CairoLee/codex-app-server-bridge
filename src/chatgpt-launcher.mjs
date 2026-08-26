@@ -31,13 +31,13 @@ try {
     await passThrough();
   } else {
     const ownerPid = Number.parseInt(
-      process.env.CHATGPT_CODEX_OWNER_PID || String(process.ppid),
+      process.env.CODEX_BRIDGE_OWNER_PID || String(process.ppid),
       10,
     );
     const status = await ensureSharedServer({ args, ownerPid });
     await bridgeStdioToAppServer(status.state.socketPath);
   }
 } catch (error) {
-  process.stderr.write(`ChatGPT Codex 共享桥启动失败：${error?.stack || error}\n`);
+  process.stderr.write(`Codex App Server Bridge 启动失败：${error?.stack || error}\n`);
   process.exitCode = sysexits.software;
 }

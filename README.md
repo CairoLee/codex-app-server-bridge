@@ -1,8 +1,14 @@
-# ChatGPT Codex Primary
+# Codex App Server Bridge
 
 让 ChatGPT Desktop 自带的 `Resources/codex app-server` 成为本机唯一的交互式
 Codex App Server，并让普通 `codex` CLI 与指向同一台 Mac 的 ChatGPT Remote SSH
 以 fail-closed 方式连接它。
+
+Codex App Server Bridge 是第三方本机工具，不是 OpenAI 官方产品。日常管理命令为
+`codex-bridge`。
+
+如果需要了解为什么采用这套架构、各入口如何汇合，以及升级时应重点检查什么，请阅读
+[架构与关键决策](docs/architecture-decisions.md)。
 
 > [!IMPORTANT]
 > 本项目目前仅支持 macOS。安装流程依赖 macOS 的 `launchctl`、ChatGPT Desktop 的
@@ -75,10 +81,10 @@ test -x /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node
 
 ```text
 ChatGPT Desktop
-  └─ chatgpt-codex (stdio/WebSocket bridge)
+  └─ codex-bridge-launcher (stdio/WebSocket bridge)
        └─ supervisor
             └─ /Applications/ChatGPT.app/Contents/Resources/codex app-server
-                 └─ unix://$CODEX_HOME/chatgpt-primary/app-server.sock
+                 └─ unix://$CODEX_HOME/codex-app-server-bridge/app-server.sock
 
 codex ── --remote unix://... ───────────────────────────────────────┘
 
@@ -86,7 +92,7 @@ ChatGPT Remote（同一台 Mac）
   └─ SSH → codex app-server proxy --sock unix-socket ───────────────┘
 ```
 
-Supervisor 监控 ChatGPT 主进程；ChatGPT 退出后会终止共享 App Server。新的 CLI
+Supervisor 监控 ChatGPT 主进程；ChatGPT 退出后会终止共享 Codex App Server。新的 CLI
 启动也会检查 owner、supervisor、server、App Tools pipe 和协议握手，任一不健康都拒绝
 启动。
 
@@ -100,9 +106,12 @@ Supervisor 监控 ChatGPT 主进程；ChatGPT 退出后会终止共享 App Serve
 npm run inst
 ```
 
+如果 ChatGPT Desktop 仍在运行，安装器会显示对应 PID，要求先使用 ⌘Q 完全退出，并以
+退出码 69 结束；检测发生在任何文件或环境修改之前。
+
 安装器会完成以下操作：
 
-- 将完整运行时安装到 `~/.local/share/chatgpt-codex-primary/releases/<内容哈希>`；
+- 将完整运行时安装到 `~/.local/share/codex-app-server-bridge/releases/<内容哈希>`；
 - 原子更新 `current`，并在版本变化时保留 `previous`；
 - 只替换 `.zshenv`、`.zshrc` 与 `.zprofile` 中带 marker 的托管块；
 - 设置 `CODEX_CLI_PATH`，让 ChatGPT Desktop 使用桥接入口；
@@ -110,6 +119,7 @@ npm run inst
 - 将 `~/.local/bin/codex` 这个 Remote 固定入口安全改指向受保护外壳，并在收据中记录
   原 standalone symlink；
 - 安装并重新加载登录级 LaunchAgent；
+- 自动清理旧项目名使用的 shell marker、LaunchAgent 与注册收据。
 
 安装是幂等操作，不要求先卸载。项目源码移动后，当前安装不会失效；需要安装新版时，
 直接在新目录再次运行 `npm run inst`，旧设置会被同一组 marker 与 LaunchAgent 自动
@@ -118,21 +128,39 @@ npm run inst
 命令完成后需要完全退出并重新启动 ChatGPT Desktop，再打开一个新的 shell。可以这样验活：
 
 ```sh
-codex-chatgpt-status
+codex-bridge status
 readlink ~/.local/bin/codex
 codex --version
 ```
 
-`codex-chatgpt-status` 应返回 `"ok": true`，本地入口应指向
-`~/.local/share/chatgpt-codex-primary/current/bin/codex`。
+`codex-bridge status` 应显示“共享 Codex App Server 运行正常”，本地入口应指向
+`~/.local/share/codex-app-server-bridge/current/bin/codex`。
+
+状态命令默认只显示健康结论与建议；需要排障细节或机器可读结果时使用：
+
+```sh
+codex-bridge status --verbose
+codex-bridge status --json
+```
+
+终端只显示面向使用者的结果和下一步；完整安装明细写入
+`~/.local/state/codex-app-server-bridge/logs/`。也可以使用以下命令查看：
+
+```sh
+codex-bridge logs
+codex-bridge logs --latest
+```
 
 ### 卸载
 
-建议完全退出 ChatGPT Desktop 后再运行：
+完全退出 ChatGPT Desktop 后运行：
 
 ```sh
 npm run uninst
 ```
+
+如果仍检测到桌面端主进程，卸载器同样会以退出码 69 拒绝继续，并保证本次不修改任何
+设置。
 
 卸载会恢复安装前的 `~/.local/bin/codex` symlink，并删除托管 shell 块、LaunchAgent
 和本项目设置的桌面端环境；它不删除版本化运行时或 standalone 安装。完成安装或卸载后
@@ -148,11 +176,15 @@ codex --version
 如果安装前存在标准 standalone symlink，第一条命令应重新指向
 `~/.codex/packages/standalone/current/bin/codex`。
 
+卸载终端输出不会展开修改文件等内部 JSON；完整明细保存在
+`~/.local/state/codex-app-server-bridge/logs/`。重复卸载是安全的，并会直接提示当前已经是
+未安装状态。
+
 也可以在源码目录已经不存在时使用已安装的管理入口：
 
 ```sh
-~/.local/share/chatgpt-codex-primary/current/bin/chatgpt-codex-inst
-~/.local/share/chatgpt-codex-primary/current/bin/chatgpt-codex-uninst
+~/.local/share/codex-app-server-bridge/current/bin/codex-bridge inst
+~/.local/share/codex-app-server-bridge/current/bin/codex-bridge uninst
 ```
 
 ## Remote SSH 的适用边界
@@ -180,8 +212,10 @@ npm test
 
 ## 常见行为
 
-- ChatGPT Desktop 未运行或共享 App Server 不健康时，普通 `codex` 会以退出码 69
+- ChatGPT Desktop 未运行或共享 Codex App Server 不健康时，普通 `codex` 会以退出码 69
   失败，并提示先启动桌面端；不会回退到 standalone。
+- 执行 `inst` 或 `uninst` 时，如果 ChatGPT Desktop 仍在运行，命令会在所有修改之前
+  失败并提示先完全退出，避免新旧配置只对部分进程生效。
 - `codex app-server` 和 `codex remote-control` 会被受保护入口阻止，避免意外创建第二个
   App Server。
 - `codex app-server proxy` 会忽略调用方提供的 socket，并强制连接本项目管理的共享
@@ -198,7 +232,7 @@ npm test
 运行时采用版本化安装目录：
 
 ```text
-~/.local/share/chatgpt-codex-primary/
+~/.local/share/codex-app-server-bridge/
   current  -> releases/<current>
   previous -> releases/<previous>
 ```

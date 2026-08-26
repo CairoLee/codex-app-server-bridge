@@ -3,10 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { readJson, removeIfExists, writeJsonAtomic } from "../../src/atomic-file.mjs";
 
-export const markerStart = "# >>> chatgpt-codex-primary >>>";
-export const markerEnd = "# <<< chatgpt-codex-primary <<<";
-export const registrationLabel = "local.chatgpt-codex-primary.env";
-export const legacyRegistrationLabels = [];
+export const markerStart = "# >>> codex-app-server-bridge >>>";
+export const markerEnd = "# <<< codex-app-server-bridge <<<";
+export const legacyMarkerPairs = [
+  {
+    start: "# >>> chatgpt-codex-primary >>>",
+    end: "# <<< chatgpt-codex-primary <<<",
+  },
+];
+export const registrationLabel = "local.codex-app-server-bridge.env";
+export const legacyRegistrationLabels = ["local.chatgpt-codex-primary.env"];
 
 function shellQuote(value) {
   return `'${value.replaceAll("'", `'"'"'`)}'`;
@@ -25,16 +31,22 @@ export function registrationPaths({
   env = process.env,
   homeDirectory = env.HOME?.trim() || os.homedir(),
   installRoot =
-    env.CHATGPT_CODEX_INSTALL_ROOT?.trim() ||
-    path.join(homeDirectory, ".local", "share", "chatgpt-codex-primary"),
+    env.CODEX_BRIDGE_INSTALL_ROOT?.trim() ||
+    path.join(homeDirectory, ".local", "share", "codex-app-server-bridge"),
   launchAgentsDirectory =
-    env.CHATGPT_CODEX_LAUNCH_AGENTS_DIR?.trim() ||
+    env.CODEX_BRIDGE_LAUNCH_AGENTS_DIR?.trim() ||
     path.join(homeDirectory, "Library", "LaunchAgents"),
   localBinDirectory =
-    env.CHATGPT_CODEX_LOCAL_BIN_DIR?.trim() ||
+    env.CODEX_BRIDGE_LOCAL_BIN_DIR?.trim() ||
     path.join(homeDirectory, ".local", "bin"),
 } = {}) {
   const currentDirectory = path.join(installRoot, "current");
+  const legacyInstallRoot = path.join(
+    homeDirectory,
+    ".local",
+    "share",
+    "chatgpt-codex-primary",
+  );
   return {
     homeDirectory,
     installRoot,
@@ -43,7 +55,13 @@ export function registrationPaths({
     managedCodexPath: path.join(currentDirectory, "bin", "codex"),
     localBinDirectory,
     localCodexPath: path.join(localBinDirectory, "codex"),
-    cliPath: path.join(currentDirectory, "bin", "chatgpt-codex"),
+    cliPath: path.join(currentDirectory, "bin", "codex-bridge-launcher"),
+    legacyCliPaths: [
+      path.join(legacyInstallRoot, "current", "bin", "chatgpt-codex"),
+    ],
+    legacyManagedCodexPaths: [
+      path.join(legacyInstallRoot, "current", "bin", "codex"),
+    ],
     launchAgentScriptPath: path.join(
       currentDirectory,
       "launchd",
@@ -58,7 +76,15 @@ export function registrationPaths({
       path.join(launchAgentsDirectory, `${label}.plist`),
     ),
     receiptPath:
-      env.CHATGPT_CODEX_REGISTRATION_RECEIPT?.trim() ||
+      env.CODEX_BRIDGE_RECEIPT?.trim() ||
+      path.join(
+        homeDirectory,
+        ".local",
+        "state",
+        "codex-app-server-bridge",
+        "installation.json",
+      ),
+    legacyReceiptPaths: [
       path.join(
         homeDirectory,
         ".local",
@@ -66,6 +92,7 @@ export function registrationPaths({
         "chatgpt-codex-primary",
         "registration.json",
       ),
+    ],
     profilePaths: {
       zshenv: path.join(homeDirectory, ".zshenv"),
       zshrc: path.join(homeDirectory, ".zshrc"),
@@ -91,12 +118,16 @@ function resolvedLinkTarget(linkPath, target) {
   return path.resolve(path.dirname(linkPath), target);
 }
 
+function managedCodexTarget(paths, state) {
+  if (state.kind !== "symlink") return null;
+  const target = resolvedLinkTarget(paths.localCodexPath, state.target);
+  return [paths.managedCodexPath, ...paths.legacyManagedCodexPaths]
+    .map((candidate) => path.resolve(candidate))
+    .find((candidate) => candidate === target) ?? null;
+}
+
 function isManagedCodexLink(paths, state) {
-  return (
-    state.kind === "symlink" &&
-    resolvedLinkTarget(paths.localCodexPath, state.target) ===
-      path.resolve(paths.managedCodexPath)
-  );
+  return managedCodexTarget(paths, state) != null;
 }
 
 function isStandaloneCodexLink(paths, state) {
@@ -120,9 +151,10 @@ async function replaceSymlink(linkPath, target) {
 }
 
 export async function registerLocalCodexEntrypoint(paths) {
-  const existingReceipt = await readJson(paths.receiptPath);
+  const existingReceipt = await readRegistrationReceipt(paths);
   const current = await pathState(paths.localCodexPath);
-  if (isManagedCodexLink(paths, current)) {
+  const currentManagedTarget = managedCodexTarget(paths, current);
+  if (currentManagedTarget === path.resolve(paths.managedCodexPath)) {
     return {
       changed: false,
       receipt:
@@ -133,20 +165,30 @@ export async function registerLocalCodexEntrypoint(paths) {
         },
     };
   }
-  if (current.kind !== "missing" && !isStandaloneCodexLink(paths, current)) {
+  if (currentManagedTarget != null && !existingReceipt?.localCodexEntrypoint) {
     throw new Error(
-      `拒绝替换 ${paths.localCodexPath}：它不是 Codex standalone 的受支持 symlink。`,
+      `拒绝迁移 ${paths.localCodexPath}：检测到旧版托管入口，但找不到可恢复的注册收据。`,
     );
+  }
+  if (current.kind !== "missing" && !isStandaloneCodexLink(paths, current)) {
+    if (currentManagedTarget == null) {
+      throw new Error(
+        `拒绝替换 ${paths.localCodexPath}：它不是 Codex standalone 的受支持 symlink。`,
+      );
+    }
   }
 
   const entrypointReceipt = {
     path: paths.localCodexPath,
     managedTarget: paths.managedCodexPath,
-    original: current,
+    original:
+      currentManagedTarget == null
+        ? current
+        : existingReceipt.localCodexEntrypoint.original,
   };
   await writeJsonAtomic(paths.receiptPath, {
     ...(existingReceipt ?? {}),
-    schemaVersion: 2,
+    schemaVersion: 3,
     installRoot: paths.installRoot,
     localCodexEntrypoint: entrypointReceipt,
   });
@@ -177,21 +219,29 @@ export function removeManagedBlocks(content) {
   const lines = content.split("\n");
   if (hadTrailingNewline) lines.pop();
   const output = [];
-  let insideBlock = false;
+  const markerPairs = [
+    { start: markerStart, end: markerEnd },
+    ...legacyMarkerPairs,
+  ];
+  let activeMarker = null;
   for (const line of lines) {
-    if (line === markerStart) {
-      if (insideBlock) throw new Error("检测到嵌套的 chatgpt-codex-primary marker。");
-      insideBlock = true;
+    const openingMarker = markerPairs.find((pair) => pair.start === line);
+    if (openingMarker) {
+      if (activeMarker) throw new Error("检测到嵌套的 Codex App Server Bridge marker。");
+      activeMarker = openingMarker;
       continue;
     }
-    if (line === markerEnd) {
-      if (!insideBlock) throw new Error("检测到缺少起始 marker 的注册块。");
-      insideBlock = false;
+    const closingMarker = markerPairs.find((pair) => pair.end === line);
+    if (closingMarker) {
+      if (!activeMarker || closingMarker !== activeMarker) {
+        throw new Error("检测到缺少匹配起始 marker 的安装块。");
+      }
+      activeMarker = null;
       continue;
     }
-    if (!insideBlock) output.push(line);
+    if (!activeMarker) output.push(line);
   }
-  if (insideBlock) throw new Error("检测到未闭合的 chatgpt-codex-primary marker。");
+  if (activeMarker) throw new Error("检测到未闭合的 Codex App Server Bridge marker。");
   return `${output.join("\n")}${hadTrailingNewline ? "\n" : ""}`;
 }
 
@@ -203,15 +253,15 @@ function appendManagedBlock(content, block) {
 export function profileBlocks(installRoot) {
   const binDirectory = shellQuote(path.join(installRoot, "current", "bin"));
   const cliPath = shellQuote(
-    path.join(installRoot, "current", "bin", "chatgpt-codex"),
+    path.join(installRoot, "current", "bin", "codex-bridge-launcher"),
   );
   return {
     path: [
       markerStart,
-      `chatgpt_codex_primary_bin=${binDirectory}`,
-      'path=("$chatgpt_codex_primary_bin" ${path:#"$chatgpt_codex_primary_bin"})',
+      `codex_bridge_bin=${binDirectory}`,
+      'path=("$codex_bridge_bin" ${path:#"$codex_bridge_bin"})',
       "export PATH",
-      "unset chatgpt_codex_primary_bin",
+      "unset codex_bridge_bin",
       markerEnd,
     ].join("\n"),
     environment: [
@@ -272,7 +322,7 @@ async function writeTextAtomic(filePath, content, defaultMode = 0o600) {
 }
 
 export async function writeRegistrationFiles(paths) {
-  const existingReceipt = await readJson(paths.receiptPath);
+  const existingReceipt = await readRegistrationReceipt(paths);
   const blocks = profileBlocks(paths.installRoot);
   const changedFiles = [];
   for (const profilePath of [paths.profilePaths.zshenv, paths.profilePaths.zshrc]) {
@@ -303,7 +353,7 @@ export async function writeRegistrationFiles(paths) {
 
   await writeJsonAtomic(paths.receiptPath, {
     ...(existingReceipt ?? {}),
-    schemaVersion: 2,
+    schemaVersion: 3,
     label: registrationLabel,
     installRoot: paths.installRoot,
     cliPath: paths.cliPath,
@@ -311,11 +361,22 @@ export async function writeRegistrationFiles(paths) {
     localCodexEntrypoint: existingReceipt?.localCodexEntrypoint,
     registeredAt: new Date().toISOString(),
   });
+  for (const legacyReceiptPath of paths.legacyReceiptPaths) {
+    if (path.resolve(legacyReceiptPath) !== path.resolve(paths.receiptPath)) {
+      await removeIfExists(legacyReceiptPath);
+    }
+  }
   return { changedFiles };
 }
 
 export async function readRegistrationReceipt(paths) {
-  return await readJson(paths.receiptPath);
+  const current = await readJson(paths.receiptPath);
+  if (current != null) return current;
+  for (const legacyReceiptPath of paths.legacyReceiptPaths) {
+    const legacy = await readJson(legacyReceiptPath);
+    if (legacy != null) return legacy;
+  }
+  return null;
 }
 
 export async function removeRegistrationFiles(paths) {
@@ -339,6 +400,8 @@ export async function removeRegistrationFiles(paths) {
       if (error?.code !== "ENOENT") throw error;
     }
   }
-  await removeIfExists(paths.receiptPath);
+  for (const receiptPath of [paths.receiptPath, ...paths.legacyReceiptPaths]) {
+    await removeIfExists(receiptPath);
+  }
   return { changedFiles };
 }
