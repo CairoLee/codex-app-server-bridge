@@ -1,0 +1,16 @@
+{
+  "name": "chatgpt-codex-primary",
+  "private": true,
+  "description": "让本机 Codex CLI 与 ChatGPT Remote 复用 ChatGPT Desktop 的 App Server",
+  "type": "module",
+  "scripts": {
+    "inst": "node scripts/inst.mjs",
+    "uninst": "node scripts/uninst.mjs",
+    "install-runtime": "node scripts/install.mjs",
+    "test": "node --test",
+    "check": "node --check src/*.mjs && node --check scripts/*.mjs && node --check scripts/lib/*.mjs && node --check test/*.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}

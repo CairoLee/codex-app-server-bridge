@@ -1,0 +1,5 @@
+#!/bin/zsh
+set -eu
+tool_root="${0:A:h:h}"
+node_path="${CHATGPT_CODEX_NODE_PATH:-/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node}"
+exec "$node_path" "$tool_root/src/cli-guard.mjs" "$@"
