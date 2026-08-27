@@ -10,6 +10,7 @@ import {
   signalVerifiedProcess,
   waitForProcessExit,
 } from "./process-utils.mjs";
+import { managedSupervisorPathForState } from "./managed-supervisor.mjs";
 import { bridgeStatus } from "./bridge-state.mjs";
 import {
   bundledNodePath,
@@ -47,7 +48,15 @@ async function stopExistingManagedServer(state, paths) {
     return;
   }
   if (isProcessAlive(state.supervisorPid)) {
-    await signalVerifiedProcess(state.supervisorPid, supervisorPath, "SIGTERM");
+    const managedSupervisorPath = await managedSupervisorPathForState(
+      state,
+      supervisorPath,
+    );
+    await signalVerifiedProcess(
+      state.supervisorPid,
+      managedSupervisorPath,
+      "SIGTERM",
+    );
     await waitForProcessExit(state.supervisorPid, 8_000);
   }
   if (isProcessAlive(state.serverPid)) {
@@ -111,6 +120,7 @@ export async function ensureSharedServer({ args, env = process.env, ownerPid }) 
       ownerPid,
       args,
       appToolsPipePath,
+      supervisorPath,
       resourceCodexPath: resourcePath,
       resourceIdentity,
       socketPath: paths.socketPath,

@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   isAppServerRunInvocation,
+  isExplicitAppServerListenerInvocation,
   withUnixSocketTransport,
 } from "../src/app-server-args.mjs";
 
@@ -19,6 +20,31 @@ test("识别桌面端 App Server 主进程启动", () => {
   );
   assert.equal(isAppServerRunInvocation(["app-server", "daemon", "version"]), false);
   assert.equal(isAppServerRunInvocation(["--version"]), false);
+});
+
+test("识别 Browser helper 显式管理的独立 App Server listener", () => {
+  assert.equal(
+    isExplicitAppServerListenerInvocation([
+      "app-server",
+      "--listen",
+      "/tmp/browser-helper.sock",
+    ]),
+    true,
+  );
+  assert.equal(
+    isExplicitAppServerListenerInvocation([
+      "app-server",
+      "--listen=stdio://",
+    ]),
+    true,
+  );
+  assert.equal(
+    isExplicitAppServerListenerInvocation([
+      "app-server",
+      "--analytics-default-enabled",
+    ]),
+    false,
+  );
 });
 
 test("Unix socket 传输替换 stdio 或已有 listen 参数", () => {

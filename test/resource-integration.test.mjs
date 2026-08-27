@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import net from "node:net";
 import path from "node:path";
+import readline from "node:readline";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { fileURLToPath } from "node:url";
@@ -55,6 +56,37 @@ async function readFirstLine(stream, timeoutMs = 30_000) {
     stream.on("data", onData);
     stream.once("error", onError);
   });
+}
+
+function createJsonResponseReader(stream) {
+  const lines = readline.createInterface({ input: stream });
+  const iterator = lines[Symbol.asyncIterator]();
+  return {
+    async read(id, timeoutMs = 30_000) {
+      for (;;) {
+        let timer;
+        try {
+          const result = await Promise.race([
+            iterator.next(),
+            new Promise((_, reject) => {
+              timer = setTimeout(
+                () => reject(new Error(`timed out waiting for response ${id}`)),
+                timeoutMs,
+              );
+            }),
+          ]);
+          if (result.done) throw new Error(`launcher closed before response ${id}`);
+          const message = JSON.parse(result.value);
+          if (message.id === id) return message;
+        } finally {
+          if (timer != null) clearTimeout(timer);
+        }
+      }
+    },
+    close() {
+      lines.close();
+    },
+  };
 }
 
 test(
@@ -145,6 +177,10 @@ test(
     serverPid = state.serverPid;
     assert.equal(state.status, "ready");
     assert.equal(state.ownerPid, process.pid);
+    assert.equal(
+      state.supervisorPath,
+      path.resolve(sourceDirectory, "../src/supervisor.mjs"),
+    );
     assert.equal(state.resourceCodexPath, resourceCodex);
 
     const status = spawn(bundledNode, [statusPath, "--json"], {
@@ -161,5 +197,170 @@ test(
     assert.equal(statusJson.ok, true);
     assert.equal(statusJson.serverPid, serverPid);
     assert.equal(statusCode, 0);
+  },
+);
+
+test(
+  "Browser 显式 listener 直通真实 Resources/codex",
+  { skip: !enabled || process.platform !== "darwin", timeout: 30_000 },
+  async (context) => {
+    const temporaryDirectory = await fs.mkdtemp(
+      "/tmp/codex-app-server-browser-listener-",
+    );
+    const sharedSocketPath = path.join(temporaryDirectory, "shared.sock");
+    let sharedSocketConnections = 0;
+    const sharedSocketServer = net.createServer((socket) => {
+      sharedSocketConnections += 1;
+      socket.end();
+    });
+    sharedSocketServer.listen(sharedSocketPath);
+    await once(sharedSocketServer, "listening");
+    context.after(async () => {
+      sharedSocketServer.close();
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    });
+
+    const launcher = spawn(
+      bundledNode,
+      [
+        launcherPath,
+        "app-server",
+        "--listen",
+        "stdio://",
+        "--analytics-default-enabled",
+      ],
+      {
+        env: {
+          ...process.env,
+          CODEX_HOME: temporaryDirectory,
+          CODEX_APP_TOOLS_PIPE_PATH: "",
+          CODEX_BRIDGE_RESOURCE_PATH: resourceCodex,
+          CODEX_BRIDGE_NODE_PATH: bundledNode,
+          CODEX_BRIDGE_SOCKET: sharedSocketPath,
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    let stderr = "";
+    launcher.stderr.setEncoding("utf8");
+    launcher.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const responses = createJsonResponseReader(launcher.stdout);
+    context.after(() => responses.close());
+
+    launcher.stdin.write(
+      `${JSON.stringify({
+        method: "initialize",
+        id: 1,
+        params: {
+          clientInfo: {
+            name: "browser_listener_integration_test",
+            title: "Browser Listener Integration Test",
+            version: "1.0.0",
+          },
+        },
+      })}\n`,
+    );
+    const initialize = await responses.read(1);
+    assert.match(initialize.result.userAgent, /Codex Desktop\/\d/u, stderr);
+    launcher.stdin.write(
+      `${JSON.stringify({ method: "initialized", params: {} })}\n`,
+    );
+
+    launcher.stdin.write(
+      `${JSON.stringify({
+        method: "configRequirements/read",
+        id: 2,
+        params: {},
+      })}\n`,
+    );
+    const requirements = await responses.read(2);
+    assert.ok(requirements.result, stderr);
+
+    launcher.stdin.end();
+    const [launcherCode] = await once(launcher, "exit");
+    assert.equal(launcherCode, 0, stderr);
+    assert.equal(sharedSocketConnections, 0);
+  },
+);
+
+test(
+  "Browser 权限回退使用真实 Resources/codex 读取安全配置",
+  { skip: !enabled || process.platform !== "darwin", timeout: 30_000 },
+  async (context) => {
+    const temporaryDirectory = await fs.mkdtemp(
+      "/tmp/codex-app-server-browser-fallback-",
+    );
+    context.after(async () => {
+      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+    });
+
+    const launcher = spawn(
+      bundledNode,
+      [launcherPath, "app-server", "--analytics-default-enabled"],
+      {
+        env: {
+          ...process.env,
+          CODEX_HOME: temporaryDirectory,
+          CODEX_BRIDGE_RESOURCE_PATH: resourceCodex,
+          CODEX_BRIDGE_NODE_PATH: bundledNode,
+          CODEX_BRIDGE_SOCKET:
+            "/var/root/codex-app-server-bridge-browser-test.sock",
+        },
+        stdio: ["pipe", "pipe", "pipe"],
+      },
+    );
+    let stderr = "";
+    launcher.stderr.setEncoding("utf8");
+    launcher.stderr.on("data", (chunk) => {
+      stderr += chunk;
+    });
+    const responses = createJsonResponseReader(launcher.stdout);
+    context.after(() => responses.close());
+
+    launcher.stdin.write(
+      `${JSON.stringify({
+        method: "initialize",
+        id: 1,
+        params: {
+          clientInfo: {
+            name: "browser_fallback_integration_test",
+            title: "Browser Fallback Integration Test",
+            version: "1.0.0",
+          },
+        },
+      })}\n`,
+    );
+    const initialize = await responses.read(1);
+    assert.match(initialize.result.userAgent, /Codex Desktop\/\d/u, stderr);
+    launcher.stdin.write(
+      `${JSON.stringify({ method: "initialized", params: {} })}\n`,
+    );
+
+    launcher.stdin.write(
+      `${JSON.stringify({
+        method: "config/read",
+        id: 2,
+        params: { cwd: temporaryDirectory, includeLayers: false },
+      })}\n`,
+    );
+    const config = await responses.read(2);
+    assert.ok(config.result?.config, stderr);
+
+    launcher.stdin.write(
+      `${JSON.stringify({
+        method: "configRequirements/read",
+        id: 3,
+        params: {},
+      })}\n`,
+    );
+    const requirements = await responses.read(3);
+    assert.ok(requirements.result, stderr);
+
+    launcher.stdin.end();
+    const [launcherCode] = await once(launcher, "exit");
+    assert.equal(launcherCode, 0, stderr);
+    assert.match(stderr, /无权连接共享 App Server/u);
   },
 );

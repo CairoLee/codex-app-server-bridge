@@ -2,4 +2,16 @@
 set -eu
 tool_root="${0:A:h:h}"
 node_path="${CODEX_BRIDGE_NODE_PATH:-/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node}"
+if [[ -n "${CODEX_BRIDGE_STATE_DIR:-}" ]]; then
+  diagnostics_config="$CODEX_BRIDGE_STATE_DIR/launcher-diagnostics.json"
+else
+  codex_home="${CODEX_HOME:-${HOME:-/tmp}/.codex}"
+  diagnostics_config="$codex_home/codex-app-server-bridge/launcher-diagnostics.json"
+fi
+if [[ -f "$diagnostics_config" ]]; then
+  export CODEX_BRIDGE_LAUNCHER_DIAGNOSTICS=1
+else
+  unset CODEX_BRIDGE_LAUNCHER_DIAGNOSTICS
+fi
+unset diagnostics_config codex_home
 exec "$node_path" "$tool_root/src/chatgpt-launcher.mjs" "$@"

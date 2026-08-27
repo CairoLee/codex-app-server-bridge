@@ -72,6 +72,9 @@ test -x /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node
 - 外部桥接器把 ChatGPT 的 JSONL stdio 转成 Unix socket 上的 WebSocket。
 - 真正的主进程由当前 ChatGPT 包内的 `Resources/codex` 启动，并保留桌面端注入的
   `mcp_servers.codex_app` 配置。
+- ChatGPT Browser helper 的显式 `app-server --listen ...` 调用直接进入短生命周期的
+  `Resources/codex app-server`；旧版 helper 若访问共享 socket 被拒也会回退到该路径。
+  桌面端没有 `--listen` 的主连接仍使用共享实例。
 - 普通 `codex` 强制使用专用 socket；主实例不存在时退出码为 69，不静默降级。
 - ChatGPT Remote SSH 的 `codex app-server proxy` 被转发到同一个专用 socket，不再启动
   standalone App Server。
@@ -90,6 +93,10 @@ codex ── --remote unix://... ───────────────�
 
 ChatGPT Remote（同一台 Mac）
   └─ SSH → codex app-server proxy --sock unix-socket ───────────────┘
+
+ChatGPT Browser helper（沙箱内）
+  └─ codex-bridge-launcher ── app-server --listen ...
+       └─ Resources/codex app-server（仅浏览器安全配置读取）
 ```
 
 Supervisor 监控 ChatGPT 主进程；ChatGPT 退出后会终止共享 Codex App Server。新的 CLI
@@ -151,6 +158,26 @@ codex-bridge logs
 codex-bridge logs --latest
 ```
 
+需要区分 ChatGPT Desktop 主 App Server 与 Browser helper 的实际启动形态时，可以临时
+启用 Launcher 诊断：
+
+```sh
+npm run diag:arm
+npm run diag:show
+npm run diag:disable
+npm run diag:clear
+```
+
+诊断默认关闭。`diag:arm` 会创建
+`$CODEX_HOME/codex-app-server-bridge/launcher-diagnostics.json` 配置开关；配置文件不存在时，
+Launcher 只判断一次文件是否存在，不加载诊断模块，也不读取或写入 trace。开关启用后，
+记录在带当前 UID 的 `/tmp` 私有目录中保存，6 小时后自动失效，最多记录 64 次调用；过期或
+达到上限会自动移除配置开关。
+
+记录只包含脱敏后的参数形态、PID/PPID、工作目录末级名称，以及与 Browser、Codex、
+Electron 和沙箱有关的非敏感环境变量名称；不会记录 stdin、环境变量值、凭据或完整工作
+目录。`diag:disable` 关闭开关但保留已有 trace 供分析，`diag:clear` 同时关闭并删除记录。
+
 ### 卸载
 
 完全退出 ChatGPT Desktop 后运行：
@@ -206,9 +233,9 @@ npm run check
 npm test
 ```
 
-默认测试包含参数守卫、失败关闭、版本化安装、入口接管/恢复和 Unix socket WebSocket
-传输。真实 ChatGPT Desktop 集成测试是显式开启的测试，不会在普通测试中自动启动或操作
-桌面端任务。
+默认测试包含参数守卫、失败关闭、Browser 沙箱权限回退、版本化安装、入口接管/恢复和
+Unix socket WebSocket 传输。真实 ChatGPT Desktop 集成测试是显式开启的测试，不会在
+普通测试中自动启动或操作桌面端任务。
 
 ## 常见行为
 
@@ -220,6 +247,9 @@ npm test
   App Server。
 - `codex app-server proxy` 会忽略调用方提供的 socket，并强制连接本项目管理的共享
   socket。
+- Browser helper 的显式 `--listen` 调用直接使用 `Resources/codex`；未携带该参数的旧版
+  helper 只有在连接共享 socket 明确返回 `EPERM` 或 `EACCES` 时才回退，其他启动错误不会
+  静默降级。
 - 安装器只会接管不存在的 `~/.local/bin/codex`，或明确指向标准 standalone 的 symlink；
   普通文件和未知 symlink 会触发安全失败，不会被覆盖。
 - 如需有意识地绕过共享机制，请使用 `codex-standalone`。

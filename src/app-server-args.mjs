@@ -16,6 +16,14 @@ export function isAppServerRunInvocation(args) {
     .some((argument) => appServerToolSubcommands.has(argument));
 }
 
+export function isExplicitAppServerListenerInvocation(args) {
+  const appServerIndex = args.indexOf("app-server");
+  if (appServerIndex < 0) return false;
+  return args
+    .slice(appServerIndex + 1)
+    .some((argument) => argument === "--listen" || argument.startsWith("--listen="));
+}
+
 export function withUnixSocketTransport(args, socketPath) {
   const result = [];
   for (let index = 0; index < args.length; index += 1) {

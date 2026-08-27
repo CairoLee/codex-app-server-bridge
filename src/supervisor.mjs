@@ -23,6 +23,7 @@ async function publish(status, extra = {}) {
     status,
     ownerPid: config.ownerPid,
     supervisorPid: process.pid,
+    supervisorPath: config.supervisorPath,
     serverPid: child?.pid || null,
     socketPath: config.socketPath,
     appToolsPipePath: config.appToolsPipePath,

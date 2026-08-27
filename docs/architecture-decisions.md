@@ -78,8 +78,11 @@ codex --remote unix://... ──────────────────
 ChatGPT Remote → SSH → codex app-server proxy --sock ... ─────────┘
 ```
 
-Supervisor 保存 owner、supervisor 和 server PID，并监控桌面端主进程。桌面端退出后，共享
-App Server 随之终止，避免留下无人管理的后台实例。
+Supervisor 保存 owner、supervisor 和 server PID，并记录启动它的精确脚本路径。新版本接管
+旧状态时，只会认可同一安装根目录下、符合 `releases/<内容哈希>/src/supervisor.mjs` 结构的
+旧 release；这样既允许原子升级后的首次重启收敛旧进程，也不会把路径校验放宽到任意 PID。
+Supervisor 同时监控桌面端主进程；桌面端退出后，共享 App Server 随之终止，避免留下无人
+管理的后台实例。
 
 ### 4. 普通 Codex 失败关闭
 
@@ -90,7 +93,22 @@ Desktop。它不会自动回退到 standalone，因为自动回退会悄悄制�
 阻止直接执行 `codex app-server` 和 `codex remote-control`，避免意外启动第二个服务；
 `codex app-server proxy` 则会被强制改写到受管理的 socket。
 
-### 5. 安装结果不依赖源码目录
+### 5. Browser 沙箱使用隔离的配置 App Server
+
+当前 ChatGPT Desktop 会把 `CODEX_CLI_PATH` 同时传给 Browser helper。实机采集确认，桌面
+主链使用没有 transport 参数的 `app-server`，Browser helper 则从受限环境调用
+`app-server --listen <临时地址>`，且没有 `CODEX_APP_TOOLS_PIPE_PATH`。如果把后者误送进共享
+服务管理器，Browser 所需的独立配置服务无法启动，`config/read` 和
+`configRequirements/read` 安全检查会失败。
+
+桥接入口因此把显式 `--listen` 作为隔离边界，保留原参数并直接执行应用包内的
+`Resources/codex app-server`。这个实例只服务 Browser helper 的安全配置读取，不承载桌面
+端交互式会话，也不会接触共享服务的锁、owner PID 或生命周期。为兼容未携带 `--listen`
+的旧版受限 helper，入口仍会在调用 `ensureSharedServer` 或读取 stdin 之前探测共享 socket；
+连接明确返回 `EPERM` 或 `EACCES` 时同样直通内嵌 Codex。socket 不存在、超时或其他错误仍
+沿用原共享启动路径，普通 CLI 和 Remote 入口的失败关闭合同不变。
+
+### 6. 安装结果不依赖源码目录
 
 源码执行 `npm run inst` 后，完整运行时会安装到版本化目录：
 
@@ -110,6 +128,8 @@ shell 配置、LaunchAgent 和 CLI 入口只引用该稳定目录，不引用源
 | `~/.local/share/codex-app-server-bridge` | 版本化运行时及 `current`/`previous` |
 | `~/.local/state/codex-app-server-bridge` | 安装收据与面向排障的 JSON 操作日志 |
 | `$CODEX_HOME/codex-app-server-bridge` | socket、运行状态和 App Server 日志 |
+| `$CODEX_HOME/codex-app-server-bridge/launcher-diagnostics.json` | 默认不存在的 Launcher 诊断配置开关 |
+| `/tmp/codex-app-server-bridge-diagnostics-<uid>` | 显式启用、自动过期的 Launcher 脱敏 trace |
 | `~/.local/bin/codex` | Remote 可能直接使用的固定入口 |
 | `~/.zshenv`、`~/.zshrc`、`~/.zprofile` | 带 marker 的 PATH 和环境配置 |
 | `~/Library/LaunchAgents/local.codex-app-server-bridge.env.plist` | 为 Dock 启动的桌面端设置 GUI 环境 |
@@ -124,6 +144,8 @@ shell 配置、LaunchAgent 和 CLI 入口只引用该稳定目录，不引用源
 - `CODEX_BRIDGE_SOCKET`
 - `CODEX_BRIDGE_RESOURCE_PATH`
 - `CODEX_BRIDGE_NODE_PATH`
+- `CODEX_BRIDGE_DIAGNOSTICS_DIR`
+- `CODEX_BRIDGE_LAUNCHER_DIAGNOSTICS`（入口根据配置文件生成的内部开关）
 
 以下变量属于 Codex 或桌面端的既有边界，不能随项目品牌重命名：
 
@@ -155,6 +177,13 @@ symlink 或 `launchctl` 修改之前退出。这个限制用于避免正在运�
 操作成功后，终端只显示结果和下一步；修改文件、收据和恢复信息等技术明细写入私有 JSON
 日志。卸载会恢复安装前的 standalone symlink，但保留版本化运行时和日志，避免把卸载
 误做成不可恢复的数据清理。
+
+Launcher 调用形态只在显式执行 `npm run diag:arm`、创建专用配置文件后记录。缺省状态下
+配置文件不存在，shell 入口只做一次文件存在性判断，Node.js Launcher 不加载诊断模块，
+也不访问 trace。配置具有自动过期时间和条数上限；过期或达到上限后会自动删除开关，恢复
+缺省热路径。参数值、环境变量值、stdin 与完整工作目录不会写入。这个机制用于在 Desktop
+升级后重新识别 Browser helper 的稳定边界，不作为长期遥测使用；`diag:disable` 关闭采集
+并保留已有 trace，`diag:clear` 同时关闭并删除记录。
 
 ## 旧名称迁移策略
 
@@ -196,7 +225,8 @@ symlink 或 `launchctl` 修改之前退出。这个限制用于避免正在运�
 8. ChatGPT 退出后 supervisor 和 App Server 能正常收敛；
 9. 安装、重复安装、卸载和重复卸载保持幂等；
 10. standalone 原入口可以根据收据精确恢复。
+11. Browser helper 可以打开页面、显示预览并截图，且其配置 App Server 不替换共享实例。
 
-默认测试覆盖参数守卫、stdio/Unix socket 传输、失败关闭、版本化运行时、旧版迁移、入口
-接管与恢复，以及友好的命令输出。真实 `Resources/codex` 和 Remote proxy 测试需要显式
-开启，避免普通单元测试意外创建或修改桌面端会话。
+默认测试覆盖参数守卫、stdio/Unix socket 传输、失败关闭、Browser 沙箱权限回退、版本化
+运行时、旧版迁移、入口接管与恢复，以及友好的命令输出。真实 `Resources/codex` 和
+Remote proxy 测试需要显式开启，避免普通单元测试意外创建或修改桌面端会话。

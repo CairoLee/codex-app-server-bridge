@@ -1,11 +1,22 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { isAppServerRunInvocation } from "./app-server-args.mjs";
+import {
+  isAppServerRunInvocation,
+  isExplicitAppServerListenerInvocation,
+} from "./app-server-args.mjs";
 import { ensureSharedServer } from "./server-manager.mjs";
+import { isUnixSocketPermissionDenied } from "./socket-permission.mjs";
 import { bridgeStdioToAppServer } from "./stdio-bridge.mjs";
-import { resourceCodexPath, sysexits } from "./settings.mjs";
+import { resourceCodexPath, runtimePaths, sysexits } from "./settings.mjs";
 
 const args = process.argv.slice(2);
+
+if (process.env.CODEX_BRIDGE_LAUNCHER_DIAGNOSTICS === "1") {
+  const { recordLauncherInvocation } = await import(
+    "./launcher-diagnostics.mjs"
+  );
+  await recordLauncherInvocation({ args }).catch(() => {});
+}
 
 async function passThrough() {
   const child = spawn(resourceCodexPath(), args, {
@@ -27,15 +38,26 @@ async function passThrough() {
 }
 
 try {
-  if (!isAppServerRunInvocation(args)) {
+  if (
+    !isAppServerRunInvocation(args) ||
+    isExplicitAppServerListenerInvocation(args)
+  ) {
     await passThrough();
   } else {
-    const ownerPid = Number.parseInt(
-      process.env.CODEX_BRIDGE_OWNER_PID || String(process.ppid),
-      10,
-    );
-    const status = await ensureSharedServer({ args, ownerPid });
-    await bridgeStdioToAppServer(status.state.socketPath);
+    const paths = runtimePaths(process.env);
+    if (await isUnixSocketPermissionDenied(paths.socketPath)) {
+      process.stderr.write(
+        "当前运行环境无权连接共享 App Server，改用 ChatGPT Resources/codex。\n",
+      );
+      await passThrough();
+    } else {
+      const ownerPid = Number.parseInt(
+        process.env.CODEX_BRIDGE_OWNER_PID || String(process.ppid),
+        10,
+      );
+      const status = await ensureSharedServer({ args, ownerPid });
+      await bridgeStdioToAppServer(status.state.socketPath);
+    }
   }
 } catch (error) {
   process.stderr.write(`Codex App Server Bridge 启动失败：${error?.stack || error}\n`);

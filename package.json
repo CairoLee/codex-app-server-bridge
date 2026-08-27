@@ -8,6 +8,10 @@
     "uninst": "node scripts/uninst.mjs",
     "status": "node src/status.mjs",
     "logs": "node src/logs.mjs",
+    "diag:arm": "node scripts/launcher-diagnostics.mjs arm",
+    "diag:disable": "node scripts/launcher-diagnostics.mjs disable",
+    "diag:show": "node scripts/launcher-diagnostics.mjs show",
+    "diag:clear": "node scripts/launcher-diagnostics.mjs clear",
     "install-runtime": "node scripts/install.mjs",
     "test": "node --test",
     "check": "node --check src/*.mjs && node --check scripts/*.mjs && node --check scripts/lib/*.mjs && node --check test/*.mjs"
