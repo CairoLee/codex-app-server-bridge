@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { bridgeStatus } from "./bridge-state.mjs";
+import { sharedRemoteInvocationArgs } from "./cli-invocation.mjs";
 import {
   resourceCodexPath,
   runtimePaths,
@@ -200,11 +201,15 @@ if (isAppServerProxy) {
     } else if (agentCommandsWithoutAppServer.has(command)) {
       await run(resourceCodexPath(), args);
     } else {
-      await run(resourceCodexPath(), [
-        "--remote",
-        `unix://${runtimePaths().socketPath}`,
-        ...args,
-      ]);
+      await run(
+        resourceCodexPath(),
+        sharedRemoteInvocationArgs({
+          args,
+          command,
+          cwd: process.cwd(),
+          socketPath: runtimePaths().socketPath,
+        }),
+      );
     }
   }
 }

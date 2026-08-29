@@ -76,6 +76,8 @@ test -x /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node
   `Resources/codex app-server`；旧版 helper 若访问共享 socket 被拒也会回退到该路径。
   桌面端没有 `--listen` 的主连接仍使用共享实例。
 - 普通 `codex` 强制使用专用 socket；主实例不存在时退出码为 69，不静默降级。
+- 新建交互式 `codex` 会把调用端的绝对工作目录显式传给共享 App Server；用户提供的
+  `-C`/`--cd` 优先，`resume`/`fork` 继续使用 Codex 原生的目录选择语义。
 - ChatGPT Remote SSH 的 `codex app-server proxy` 被转发到同一个专用 socket，不再启动
   standalone App Server。
 - `codex-standalone` 是明确的救援入口，不会由普通 `codex` 自动调用。
@@ -247,6 +249,8 @@ Unix socket WebSocket 传输。真实 ChatGPT Desktop 集成测试是显式开�
   App Server。
 - `codex app-server proxy` 会忽略调用方提供的 socket，并强制连接本项目管理的共享
   socket。
+- 新建交互式 `codex` 即使连接由桌面端从 `/` 启动的共享 App Server，也会保留终端调用
+  位置；显式 `-C`/`--cd` 不会被覆盖。
 - Browser helper 的显式 `--listen` 调用直接使用 `Resources/codex`；未携带该参数的旧版
   helper 只有在连接共享 socket 明确返回 `EPERM` 或 `EACCES` 时才回退，其他启动错误不会
   静默降级。

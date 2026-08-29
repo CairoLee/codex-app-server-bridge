@@ -93,6 +93,10 @@ Desktop。它不会自动回退到 standalone，因为自动回退会悄悄制�
 阻止直接执行 `codex app-server` 和 `codex remote-control`，避免意外启动第二个服务；
 `codex app-server proxy` 则会被强制改写到受管理的 socket。
 
+共享 App Server 的进程工作目录属于桌面端生命周期，不能代表每个终端调用位置。新建
+交互式 TUI 因此在客户端入口补充绝对 `--cd`，同时保留用户显式 `-C`/`--cd`；
+`resume`/`fork` 不注入默认值，以免覆盖 Codex 自身的会话目录选择与 `tui.resume_cwd`。
+
 ### 5. Browser 沙箱使用隔离的配置 App Server
 
 当前 ChatGPT Desktop 会把 `CODEX_CLI_PATH` 同时传给 Browser helper。实机采集确认，桌面
@@ -226,6 +230,8 @@ Launcher 调用形态只在显式执行 `npm run diag:arm`、创建专用配置�
 9. 安装、重复安装、卸载和重复卸载保持幂等；
 10. standalone 原入口可以根据收据精确恢复。
 11. Browser helper 可以打开页面、显示预览并截图，且其配置 App Server 不替换共享实例。
+12. 从非 `/` 目录启动新的 `codex` 时，会话目录等于调用端目录；显式 `-C` 仍优先，
+    `resume`/`fork` 仍保留原生目录选择。
 
 默认测试覆盖参数守卫、stdio/Unix socket 传输、失败关闭、Browser 沙箱权限回退、版本化
 运行时、旧版迁移、入口接管与恢复，以及友好的命令输出。真实 `Resources/codex` 和
