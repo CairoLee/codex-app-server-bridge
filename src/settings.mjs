@@ -42,6 +42,16 @@ export function standaloneCodexPath(env = process.env) {
   );
 }
 
+export function standaloneInstallDirectory(env = process.env) {
+  const configured = env.CODEX_BRIDGE_STANDALONE_INSTALL_DIR?.trim();
+  if (configured) return configured;
+  const homeDirectory = env.HOME?.trim() || os.homedir();
+  const installRoot =
+    env.CODEX_BRIDGE_INSTALL_ROOT?.trim() ||
+    path.join(homeDirectory, ".local", "share", "codex-app-server-bridge");
+  return path.join(installRoot, "standalone-bin");
+}
+
 export function runtimePaths(env = process.env) {
   const stateDir = stateDirectory(env);
   return {

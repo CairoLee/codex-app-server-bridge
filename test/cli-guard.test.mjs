@@ -10,6 +10,10 @@ import { fileURLToPath } from "node:url";
 const execFileAsync = promisify(execFile);
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const guardPath = path.resolve(sourceDirectory, "../src/cli-guard.mjs");
+const standaloneWrapperPath = path.resolve(
+  sourceDirectory,
+  "../bin/codex-standalone",
+);
 
 async function runGuard(args, env) {
   try {
@@ -18,6 +22,23 @@ async function runGuard(args, env) {
   } catch (error) {
     return { code: error.code, stdout: error.stdout, stderr: error.stderr };
   }
+}
+
+async function writeFakeCodex(directory) {
+  const executable = path.join(directory, "fake-codex");
+  await fs.writeFile(
+    executable,
+    [
+      "#!/bin/sh",
+      'printf \'args=%s\\n\' "$*"',
+      'printf \'install=%s\\n\' "${CODEX_INSTALL_DIR-}"',
+      'printf \'path=%s\\n\' "$PATH"',
+      'printf \'entrypoint=%s\\n\' "${CODEX_BRIDGE_STANDALONE_ENTRYPOINT-unset}"',
+      "",
+    ].join("\n"),
+    { encoding: "utf8", mode: 0o755 },
+  );
+  return executable;
 }
 
 test("共享 App Server 不存在时阻止普通 Codex 启动", async () => {
@@ -56,4 +77,63 @@ test("Remote SSH proxy 在共享 App Server 不存在时失败关闭", async () 
   } finally {
     await fs.rm(temporaryDirectory, { recursive: true, force: true });
   }
+});
+
+test("codex update 使用 standalone 探测并隔离安装入口", async (context) => {
+  const temporaryDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "update-routing-test-"),
+  );
+  context.after(() => fs.rm(temporaryDirectory, { recursive: true, force: true }));
+  const standalonePath = await writeFakeCodex(temporaryDirectory);
+  const installRoot = path.join(temporaryDirectory, "bridge");
+  const standaloneInstallDirectory = path.join(installRoot, "standalone-bin");
+
+  const result = await runGuard(["--config", "foo=bar", "update"], {
+    ...process.env,
+    CODEX_BRIDGE_INSTALL_ROOT: installRoot,
+    CODEX_BRIDGE_RESOURCE_PATH: "/nonexistent/resource-codex",
+    CODEX_INSTALL_DIR: "/protected/bridge/bin",
+    CODEX_STANDALONE_PATH: standalonePath,
+    PATH: "/usr/bin:/bin",
+  });
+
+  assert.equal(result.code, 0, result.stderr);
+  assert.match(result.stdout, /args=--config foo=bar update/u);
+  const outputLines = result.stdout.trim().split("\n");
+  assert.ok(outputLines.includes(`install=${standaloneInstallDirectory}`));
+  assert.equal(
+    outputLines.find((line) => line.startsWith("path="))?.split(path.delimiter)[0],
+    `path=${standaloneInstallDirectory}`,
+  );
+  assert.match(result.stdout, /entrypoint=unset/u);
+});
+
+test("codex-standalone update 也不覆盖 bridge 入口", async (context) => {
+  const temporaryDirectory = await fs.mkdtemp(
+    path.join(os.tmpdir(), "standalone-update-routing-test-"),
+  );
+  context.after(() => fs.rm(temporaryDirectory, { recursive: true, force: true }));
+  const standalonePath = await writeFakeCodex(temporaryDirectory);
+  const installRoot = path.join(temporaryDirectory, "bridge");
+  const standaloneInstallDirectory = path.join(installRoot, "standalone-bin");
+
+  const result = await execFileAsync(standaloneWrapperPath, ["update"], {
+    env: {
+      ...process.env,
+      CODEX_BRIDGE_INSTALL_ROOT: installRoot,
+      CODEX_BRIDGE_NODE_PATH: process.execPath,
+      CODEX_INSTALL_DIR: "/protected/bridge/bin",
+      CODEX_STANDALONE_PATH: standalonePath,
+      PATH: "/usr/bin:/bin",
+    },
+  });
+
+  assert.match(result.stdout, /args=update/u);
+  const outputLines = result.stdout.trim().split("\n");
+  assert.ok(outputLines.includes(`install=${standaloneInstallDirectory}`));
+  assert.equal(
+    outputLines.find((line) => line.startsWith("path="))?.split(path.delimiter)[0],
+    `path=${standaloneInstallDirectory}`,
+  );
+  assert.match(result.stdout, /entrypoint=unset/u);
 });

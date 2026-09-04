@@ -93,6 +93,14 @@ Desktop。它不会自动回退到 standalone，因为自动回退会悄悄制�
 阻止直接执行 `codex app-server` 和 `codex remote-control`，避免意外启动第二个服务；
 `codex app-server proxy` 则会被强制改写到受管理的 socket。
 
+`codex update` 不能交给桌面端内嵌二进制：Codex 会根据当前可执行文件的真实路径
+判断 npm、Homebrew 或 standalone 安装，应用包内路径不属于任一可更新安装。受保护
+入口因此只对该命令调用 standalone。由于官方 standalone 安装器会读取
+`CODEX_INSTALL_DIR` 并替换其中的 `codex` symlink，更新子进程将该目录重定向
+bridge 安装根下的 `standalone-bin`，并将它临时放到子进程 `PATH` 首位。这既
+保留 Codex 原生的安装方式探测和更新逻辑，也防止安装器覆盖受保护外壳或向
+shell profile 追加额外 PATH 配置。`codex-standalone update` 使用同一隔离。
+
 共享 App Server 的进程工作目录属于桌面端生命周期，不能代表每个终端调用位置。新建
 交互式 TUI 因此在客户端入口补充绝对 `--cd`，同时保留用户显式 `-C`/`--cd`；
 `resume`/`fork` 不注入默认值，以免覆盖 Codex 自身的会话目录选择与 `tui.resume_cwd`。
@@ -130,6 +138,7 @@ shell 配置、LaunchAgent 和 CLI 入口只引用该稳定目录，不引用源
 | 位置 | 用途 |
 | --- | --- |
 | `~/.local/share/codex-app-server-bridge` | 版本化运行时及 `current`/`previous` |
+| `~/.local/share/codex-app-server-bridge/standalone-bin` | standalone 更新器的隔离可见命令目录 |
 | `~/.local/state/codex-app-server-bridge` | 安装收据与面向排障的 JSON 操作日志 |
 | `$CODEX_HOME/codex-app-server-bridge` | socket、运行状态和 App Server 日志 |
 | `$CODEX_HOME/codex-app-server-bridge/launcher-diagnostics.json` | 默认不存在的 Launcher 诊断配置开关 |
@@ -148,6 +157,7 @@ shell 配置、LaunchAgent 和 CLI 入口只引用该稳定目录，不引用源
 - `CODEX_BRIDGE_SOCKET`
 - `CODEX_BRIDGE_RESOURCE_PATH`
 - `CODEX_BRIDGE_NODE_PATH`
+- `CODEX_BRIDGE_STANDALONE_INSTALL_DIR`
 - `CODEX_BRIDGE_DIAGNOSTICS_DIR`
 - `CODEX_BRIDGE_LAUNCHER_DIAGNOSTICS`（入口根据配置文件生成的内部开关）
 
@@ -232,6 +242,8 @@ Launcher 调用形态只在显式执行 `npm run diag:arm`、创建专用配置�
 11. Browser helper 可以打开页面、显示预览并截图，且其配置 App Server 不替换共享实例。
 12. 从非 `/` 目录启动新的 `codex` 时，会话目录等于调用端目录；显式 `-C` 仍优先，
     `resume`/`fork` 仍保留原生目录选择。
+13. `codex update` 使用 standalone 安装方式，且更新后受保护入口与 shell profile
+    均未被官方安装器改写。
 
 默认测试覆盖参数守卫、stdio/Unix socket 传输、失败关闭、Browser 沙箱权限回退、版本化
 运行时、旧版迁移、入口接管与恢复，以及友好的命令输出。真实 `Resources/codex` 和

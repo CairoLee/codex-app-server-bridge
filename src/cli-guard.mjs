@@ -1,15 +1,19 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
+import path from "node:path";
 import { bridgeStatus } from "./bridge-state.mjs";
 import { sharedRemoteInvocationArgs } from "./cli-invocation.mjs";
 import {
   resourceCodexPath,
   runtimePaths,
   standaloneCodexPath,
+  standaloneInstallDirectory,
   sysexits,
 } from "./settings.mjs";
 
 const args = process.argv.slice(2);
+const standaloneEntrypoint =
+  process.env.CODEX_BRIDGE_STANDALONE_ENTRYPOINT === "1";
 const topLevelCommands = new Set([
   "agents",
   "exec",
@@ -126,8 +130,8 @@ function hasExplicitRemote(argv) {
   );
 }
 
-async function run(executable, childArgs) {
-  const child = spawn(executable, childArgs, { env: process.env, stdio: "inherit" });
+async function run(executable, childArgs, env = process.env) {
+  const child = spawn(executable, childArgs, { env, stdio: "inherit" });
   const outcome = await new Promise((resolve) => {
     child.once("error", (error) => resolve({ error }));
     child.once("exit", (code, signal) => resolve({ code, signal }));
@@ -140,6 +144,20 @@ async function run(executable, childArgs) {
   const { code, signal } = outcome;
   if (signal) process.kill(process.pid, signal);
   process.exitCode = code ?? sysexits.software;
+}
+
+function standaloneEnvironment({ update = false } = {}) {
+  const env = { ...process.env };
+  delete env.CODEX_BRIDGE_STANDALONE_ENTRYPOINT;
+  if (!update) return env;
+
+  const installDirectory = standaloneInstallDirectory(env);
+  const pathEntries = (env.PATH ?? "")
+    .split(path.delimiter)
+    .filter((entry) => entry !== "" && entry !== installDirectory);
+  env.CODEX_INSTALL_DIR = installDirectory;
+  env.PATH = [installDirectory, ...pathEntries].join(path.delimiter);
+  return env;
 }
 
 function printUnavailable(reason) {
@@ -158,7 +176,13 @@ function printUnavailable(reason) {
 const command = topLevelCommand(args);
 const positional = positionalArguments(args);
 const isAppServerProxy = command === "app-server" && positional[1] === "proxy";
-if (isAppServerProxy) {
+if (standaloneEntrypoint || command === "update") {
+  await run(
+    standaloneCodexPath(),
+    args,
+    standaloneEnvironment({ update: command === "update" }),
+  );
+} else if (isAppServerProxy) {
   const status = await bridgeStatus();
   if (!status.ok) {
     printUnavailable(status.reason);
@@ -213,5 +237,3 @@ if (isAppServerProxy) {
     }
   }
 }
-
-export { standaloneCodexPath };

@@ -1,4 +1,6 @@
 #!/bin/zsh
 set -eu
-standalone_path="${CODEX_STANDALONE_PATH:-$HOME/.codex/packages/standalone/current/bin/codex}"
-exec "$standalone_path" "$@"
+tool_root="${0:A:h:h}"
+node_path="${CODEX_BRIDGE_NODE_PATH:-/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node}"
+export CODEX_BRIDGE_STANDALONE_ENTRYPOINT=1
+exec "$node_path" "$tool_root/src/cli-guard.mjs" "$@"

@@ -81,6 +81,8 @@ test -x /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node
 - ChatGPT Remote SSH 的 `codex app-server proxy` 被转发到同一个专用 socket，不再启动
   standalone App Server。
 - `codex-standalone` 是明确的救援入口，不会由普通 `codex` 自动调用。
+- `codex update` 是例外：它使用 standalone 的原生更新探测，但将安装器的
+  可见命令目录隔离到 bridge 运行时下，不覆盖受保护的 `codex` 外壳。
 
 ## 进程关系
 
@@ -245,6 +247,8 @@ Unix socket WebSocket 传输。真实 ChatGPT Desktop 集成测试是显式开�
   失败，并提示先启动桌面端；不会回退到 standalone。
 - 执行 `inst` 或 `uninst` 时，如果 ChatGPT Desktop 仍在运行，命令会在所有修改之前
   失败并提示先完全退出，避免新旧配置只对部分进程生效。
+- `codex update` 会更新保留的 standalone 安装；更新后普通 `codex` 仍是受保护
+  入口，`codex-standalone` 则直接使用新的 standalone release。
 - `codex app-server` 和 `codex remote-control` 会被受保护入口阻止，避免意外创建第二个
   App Server。
 - `codex app-server proxy` 会忽略调用方提供的 socket，并强制连接本项目管理的共享
