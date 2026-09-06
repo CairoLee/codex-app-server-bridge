@@ -3,7 +3,7 @@ import path from "node:path";
 
 export async function recentOperationLogs(
   logsDirectory,
-  { limit = 10, fileSystem = fs } = {},
+  { limit = 10, fileSystem = fs, extension = ".json" } = {},
 ) {
   let entries;
   try {
@@ -13,7 +13,7 @@ export async function recentOperationLogs(
     throw error;
   }
   return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
+    .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
     .map((entry) => path.join(logsDirectory, entry.name))
     .sort((left, right) => right.localeCompare(left))
     .slice(0, limit);

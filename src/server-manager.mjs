@@ -88,11 +88,12 @@ async function waitForGeneration(env, generation, timeoutMs = 20_000) {
   throw new Error(`timed out starting shared App Server: ${lastReason}`);
 }
 
-export async function ensureSharedServer({ args, env = process.env, ownerPid }) {
+export async function ensureSharedServer({ args, env = process.env, ownerPid, log }) {
   const paths = runtimePaths(env);
   const resourcePath = resourceCodexPath(env);
   const resourceIdentity = await fileIdentity(resourcePath);
   const appToolsPipePath = env.CODEX_APP_TOOLS_PIPE_PATH?.trim() || null;
+  log?.event("server.ensure", { ownerPid, appToolsPipePresent: Boolean(appToolsPipePath), resourcePath });
   if (!appToolsPipePath) {
     throw new Error("CODEX_APP_TOOLS_PIPE_PATH is missing from ChatGPT Desktop");
   }
@@ -107,9 +108,13 @@ export async function ensureSharedServer({ args, env = process.env, ownerPid }) 
       existing.ownerPid === ownerPid
     ) {
       const status = await bridgeStatus(env);
-      if (status.ok) return status;
+      if (status.ok) {
+        log?.event("server.reused", { generation: existing.generation, serverPid: existing.serverPid });
+        return status;
+      }
     }
 
+    log?.event("server.replace", { reason: existing == null ? "no-state" : "configuration-owner-or-health-changed", launchKeyMatches: existing?.launchKey === expectedLaunchKey, ownerMatches: existing?.ownerPid === ownerPid, previousServerPid: existing?.serverPid, previousSupervisorPid: existing?.supervisorPid });
     await stopExistingManagedServer(existing, paths);
     const generation = crypto.randomUUID();
     const launchConfigPath = path.join(paths.stateDir, `launch-${generation}.json`);
@@ -125,7 +130,7 @@ export async function ensureSharedServer({ args, env = process.env, ownerPid }) 
       resourceIdentity,
       socketPath: paths.socketPath,
       statePath: paths.statePath,
-      appServerLogPath: paths.appServerLogPath,
+      runtimeLogDirectory: path.join(paths.stateDir, "runtime-logs"),
     });
     const supervisor = spawn(bundledNodePath(env), [supervisorPath, launchConfigPath], {
       detached: true,
@@ -133,6 +138,7 @@ export async function ensureSharedServer({ args, env = process.env, ownerPid }) 
       stdio: "ignore",
     });
     if (!supervisor.pid) throw new Error("failed to start shared-server supervisor");
+    log?.event("supervisor.started", { childPid: supervisor.pid, ownerPid, generation });
     supervisor.unref();
     return await waitForGeneration(env, generation);
   } finally {

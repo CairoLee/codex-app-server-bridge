@@ -162,6 +162,40 @@ codex-bridge logs
 codex-bridge logs --latest
 ```
 
+日常运行日志默认开启，保存在
+`$CODEX_HOME/codex-app-server-bridge/runtime-logs/YYYY-MM-DD.jsonl`；
+设置 `CODEX_BRIDGE_STATE_DIR` 时改用该目录下的 `runtime-logs/`。
+每个本地自然日一个 JSONL 文件，保留今天和前两天。进程启动、跨日时清理旧文件；
+所有 bridge 进程都未运行时不会唤醒机器清理，下次启动再清理。
+
+```sh
+codex-bridge logs --runtime
+codex-bridge logs --runtime --latest
+codex-bridge logs --runtime --json
+CODEX_BRIDGE_RUNTIME_LOG=0 codex --version
+```
+
+`CODEX_BRIDGE_RUNTIME_LOG=0` 关闭日常日志，未设置或其他值表示开启。
+开关由启动时的环境决定；若要控制桌面端 launcher/supervisor，需要让桌面进程继承它，
+并重新启动对应进程。例如 macOS 可先执行
+`launchctl setenv CODEX_BRIDGE_RUNTIME_LOG 0`，再完全退出并重启 ChatGPT Desktop；
+恢复默认可执行 `launchctl unsetenv CODEX_BRIDGE_RUNTIME_LOG` 后重启。
+该开关不控制安装操作日志及下述临时 Launcher 诊断。
+
+记录包括入口参数形态、当前 PID/PPID、启动的可执行文件与子进程 PID、
+共享服务 generation/owner PID、复用或替换、转发/跳过/阻止原因、退出码和信号。
+参数中的自由文本、路径和凭据值脱敏；不记录环境变量值或协议消息正文。
+stdio bridge 仅在连接和结束时记录事件及消息数/空行跳过数，不逐条解析或写入消息。
+
+App Server 原本追加到 `app-server.log` 的 stdout/stderr 改为同一每日文件中的
+`process_output` 记录。这部分是上游原始诊断输出，可能包含路径或上游打印的敏感内容，
+分享日志前应检查。目录权限为 `0700`、文件为 `0600`。
+历史 `app-server.log` 和安装操作日志不属于新滚动策略，不会自动删除。
+
+写入采用异步批量、有界队列；大量输出会限速、截断或丢弃并记录汇总计数，
+写盘失败不会阻止 bridge 工作。正常退出会刷新队列；强制终止或磁盘故障可能缺少尾部记录。
+这套日志用于低成本故障定位，不是完整协议审计。
+
 需要区分 ChatGPT Desktop 主 App Server 与 Browser helper 的实际启动形态时，可以临时
 启用 Launcher 诊断：
 

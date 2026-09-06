@@ -91,3 +91,46 @@ test(
     assert.match(stderr, /无权连接共享 App Server/u);
   },
 );
+
+test("日常日志关联 launcher 和子进程，并解释显式 listener 跳过原因", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "launcher-runtime-"));
+  context.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const env = {
+    ...process.env,
+    CODEX_BRIDGE_STATE_DIR: directory,
+    CODEX_BRIDGE_RUNTIME_LOG: "1",
+    CODEX_BRIDGE_RESOURCE_PATH: "/usr/bin/true",
+  };
+  const { stdout, stderr } = await execFileAsync(process.execPath, [
+    launcherPath, "app-server", "--listen", "secret-endpoint",
+  ], { env });
+  assert.equal(stdout, "");
+  assert.equal(stderr, "");
+  const logsDirectory = path.join(directory, "runtime-logs");
+  const names = await fs.readdir(logsDirectory);
+  const text = await fs.readFile(path.join(logsDirectory, names[0]), "utf8");
+  assert.ok(!text.includes("secret-endpoint"));
+  const records = text.trim().split("\n").map((line) => JSON.parse(line));
+  assert.ok(records.some((record) => record.reason === "explicit-listener"));
+  const started = records.find((record) => record.event === "child.started");
+  const exited = records.find((record) => record.event === "child.exited");
+  assert.ok(started.pid > 0);
+  assert.ok(started.ppid > 0);
+  assert.ok(started.childPid > 0);
+  assert.equal(exited.childPid, started.childPid);
+  assert.equal(exited.code, 0);
+});
+
+test("关闭日常日志时 launcher 不创建日志目录", async (context) => {
+  const directory = await fs.mkdtemp(path.join(os.tmpdir(), "launcher-no-runtime-"));
+  context.after(() => fs.rm(directory, { recursive: true, force: true }));
+  await execFileAsync(process.execPath, [launcherPath, "--version"], {
+    env: {
+      ...process.env,
+      CODEX_BRIDGE_STATE_DIR: directory,
+      CODEX_BRIDGE_RUNTIME_LOG: "0",
+      CODEX_BRIDGE_RESOURCE_PATH: "/usr/bin/true",
+    },
+  });
+  await assert.rejects(fs.stat(path.join(directory, "runtime-logs")), { code: "ENOENT" });
+});
