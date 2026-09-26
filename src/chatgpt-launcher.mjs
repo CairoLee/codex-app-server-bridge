@@ -59,6 +59,10 @@ try {
         "当前运行环境无权连接共享 App Server，改用 ChatGPT Resources/codex。\n",
       );
       await passThrough("socket-permission-denied");
+    } else if (!process.env.CODEX_APP_TOOLS_PIPE_PATH?.trim()) {
+      // 桌面端在工具管道建立前也会启动辅助 App Server；该实例只服务
+      // 当前 stdio 调用，不应创建或复用缺少桌面工具的共享服务。
+      await passThrough("app-tools-pipe-absent");
     } else {
       const ownerPid = Number.parseInt(
         process.env.CODEX_BRIDGE_OWNER_PID || String(process.ppid),

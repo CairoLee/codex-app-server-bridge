@@ -38,8 +38,10 @@ Unix socket。这样可以共享会话和运行状态，同时继续使用桌面
 
 - macOS；当前实现没有声明或验证其他操作系统支持。
 - ChatGPT Desktop 安装在默认位置 `/Applications/ChatGPT.app`。
-- ChatGPT Desktop 包内存在可执行的 `Contents/Resources/codex` 和
-  `Contents/Resources/cua_node/bin/node`。
+- ChatGPT Desktop 包内存在可执行的 Codex 和 `Contents/Resources/cua_node/bin/node`。
+  Codex 优先使用新版 `Contents/Resources/codex-cli/CodexCLI.app/Contents/MacOS/codex`，
+  不可用时兼容旧版 `Contents/Resources/codex`。下文 `Resources/codex` 泛指这个内嵌
+  Codex；显式设置的 `CODEX_BRIDGE_RESOURCE_PATH` 始终优先。
 - Node.js 22 或更高版本以及 npm。它们用于从源码运行安装、检查和测试；安装后的管理
   入口默认改用 ChatGPT Desktop 内嵌的 Node.js。
 - 当前用户可写入 `~/.local`、`~/.codex`、`~/Library/LaunchAgents` 以及自己的 zsh
@@ -60,7 +62,7 @@ Unix socket。这样可以共享会话和运行状态，同时继续使用桌面
 ```sh
 node --version
 npm --version
-test -x /Applications/ChatGPT.app/Contents/Resources/codex
+node --input-type=module -e 'import { resourceCodexPath } from "./src/settings.mjs"; import { accessSync, constants } from "node:fs"; const p = resourceCodexPath(); accessSync(p, constants.X_OK); console.log(p)'
 test -x /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node
 ```
 
@@ -70,6 +72,9 @@ test -x /Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node
 - ChatGPT 仍通过 `CODEX_CLI_PATH` 启动 stdio 入口。
 - 显式清除旧的 `CODEX_APP_SERVER_USE_LOCAL_DAEMON`，避免将来重新触发默认 daemon 分支。
 - 外部桥接器把 ChatGPT 的 JSONL stdio 转成 Unix socket 上的 WebSocket。
+- 桌面端在工具管道建立前启动的无 `CODEX_APP_TOOLS_PIPE_PATH` 辅助实例，
+  直接使用内嵌 Codex 的 stdio，不创建或复用共享服务；携带工具管道的主连接
+  仍使用共享实例，并保留原有健康检查。旧版携带管道的启动方式继续兼容。
 - 真正的主进程由当前 ChatGPT 包内的 `Resources/codex` 启动，并保留桌面端注入的
   `mcp_servers.codex_app` 配置。
 - ChatGPT Browser helper 的显式 `app-server --listen ...` 调用直接进入短生命周期的
@@ -285,6 +290,10 @@ Unix socket WebSocket 传输。真实 ChatGPT Desktop 集成测试是显式开�
   入口，`codex-standalone` 则直接使用新的 standalone release。
 - `codex app-server` 和 `codex remote-control` 会被受保护入口阻止，避免意外创建第二个
   App Server。
+- Computer Use 认证查询例外：仅当直接父进程是默认安装位置的官方
+  `SkyComputerUseService`、OpenAI 代码签名校验通过，且参数恰为
+  `app-server --listen stdio://` 时，直通内嵌 Codex。查询实例不成为共享服务；
+  来源无法确认或参数不同仍拒绝。该规则兼容已有的新旧内嵌 Codex 路径。
 - `codex app-server proxy` 会忽略调用方提供的 socket，并强制连接本项目管理的共享
   socket。
 - 新建交互式 `codex` 即使连接由桌面端从 `/` 启动的共享 App Server，也会保留终端调用

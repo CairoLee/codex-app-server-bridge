@@ -1,4 +1,5 @@
 import os from "node:os";
+import { accessSync, constants, statSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -21,9 +22,26 @@ export function socketPath(env = process.env) {
   return configured || path.join(stateDirectory(env), "app-server.sock");
 }
 
-export function resourceCodexPath(env = process.env) {
+export function resourceCodexPath(
+  env = process.env,
+  resourcesDirectory = "/Applications/ChatGPT.app/Contents/Resources",
+) {
   const configured = env.CODEX_BRIDGE_RESOURCE_PATH?.trim();
-  return configured || "/Applications/ChatGPT.app/Contents/Resources/codex";
+  if (configured) return configured;
+  const candidates = [
+    path.join(resourcesDirectory, "codex-cli/CodexCLI.app/Contents/MacOS/codex"),
+    path.join(resourcesDirectory, "codex"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      accessSync(candidate, constants.X_OK);
+      if (statSync(candidate).isFile()) return candidate;
+    } catch {
+      // 新路径不可用时继续检查旧版布局。
+    }
+  }
+  // 保留原有启动失败语义，不回退到 standalone 或 PATH 中的其他程序。
+  return candidates[1];
 }
 
 export function bundledNodePath(env = process.env) {

@@ -1,3 +1,4 @@
+import { resourceCodexPath } from "../src/settings.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
@@ -12,7 +13,7 @@ const enabled = process.env.RUN_PROXY_INTEGRATION === "1";
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const guardPath = path.resolve(sourceDirectory, "../src/cli-guard.mjs");
 const bundledNode = "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node";
-const resourceCodex = "/Applications/ChatGPT.app/Contents/Resources/codex";
+const resourceCodex = resourceCodexPath();
 const execFileAsync = promisify(execFile);
 
 function spawnProxy() {

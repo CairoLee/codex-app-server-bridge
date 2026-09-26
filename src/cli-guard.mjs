@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { bridgeStatus } from "./bridge-state.mjs";
+import { isComputerUseHelper } from "./computer-use-helper.mjs";
 import { sharedRemoteInvocationArgs } from "./cli-invocation.mjs";
 import {
   resourceCodexPath,
@@ -204,6 +205,9 @@ try {
         forceProxySocket(args, runtimePaths().socketPath),
       );
     }
+  } else if (command === "app-server" && await isComputerUseHelper(args)) {
+    log.event("route", { action: "pass-through", reason: "verified-computer-use-stdio" });
+    await run(resourceCodexPath(), args);
   } else if (blockedServerCommands.has(command)) {
     log.event("route", { action: "blocked", reason: "second-server", command });
     process.stderr.write(

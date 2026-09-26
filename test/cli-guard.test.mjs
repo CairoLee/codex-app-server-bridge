@@ -63,6 +63,12 @@ test("阻止从受保护入口直接启动第二个 App Server", async () => {
   assert.match(result.stderr, /已阻止/u);
 });
 
+test("普通调用者不能借 Computer Use 的 stdio 参数绕过限制", async () => {
+  const result = await runGuard(["app-server", "--listen", "stdio://"], process.env);
+  assert.equal(result.code, 69);
+  assert.match(result.stderr, /已阻止/u);
+});
+
 test("Remote SSH proxy 在共享 App Server 不存在时失败关闭", async () => {
   const temporaryDirectory = await fs.mkdtemp(path.join(os.tmpdir(), "proxy-guard-test-"));
   try {

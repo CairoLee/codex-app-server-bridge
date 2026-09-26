@@ -1,3 +1,4 @@
+import { resourceCodexPath } from "../src/settings.mjs";
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs/promises";
@@ -12,7 +13,7 @@ const enabled = process.env.RUN_RESOURCE_INTEGRATION === "1";
 const sourceDirectory = path.dirname(fileURLToPath(import.meta.url));
 const launcherPath = path.resolve(sourceDirectory, "../src/chatgpt-launcher.mjs");
 const statusPath = path.resolve(sourceDirectory, "../src/status.mjs");
-const resourceCodex = "/Applications/ChatGPT.app/Contents/Resources/codex";
+const resourceCodex = resourceCodexPath();
 const bundledNode =
   "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node";
 
