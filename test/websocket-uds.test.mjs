@@ -3,9 +3,10 @@ import assert from "node:assert/strict";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import net from "node:net";
+import http from "node:http";
 import path from "node:path";
 import { once } from "node:events";
-import { connectUnixWebSocket } from "../src/websocket-uds.mjs";
+import { connectUnixWebSocket, probeAppServer } from "../src/websocket-uds.mjs";
 
 const guid = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 
@@ -95,3 +96,42 @@ test("通过 Unix socket 完成无扩展 WebSocket 握手和分片消息传输",
   assert.deepEqual(await message, ["response"]);
   await websocket.close();
 });
+
+for (const { name, response, error } of [
+  { name: "成功结果", response: { result: { userAgent: "desktop/1.0" } } },
+  { name: "RPC 错误", response: { error: { code: -32600, message: "rejected" } }, error: /initialize failed/u },
+  { name: "缺失版本的结果", response: { result: {} }, error: /no userAgent/u },
+]) {
+  test(`健康检查正确处理${name}`, { timeout: 5_000 }, async (context) => {
+    const directory = await fs.mkdtemp("/tmp/ws-probe-test-");
+    const socketPath = path.join(directory, "server.sock");
+    const server = http.createServer();
+    const sockets = new Set();
+    context.after(async () => {
+      for (const socket of sockets) socket.destroy();
+      server.close();
+      await fs.rm(directory, { recursive: true, force: true });
+    });
+    server.on("upgrade", (request, socket) => {
+      sockets.add(socket);
+      const accept = crypto.createHash("sha1")
+        .update(`${request.headers["sec-websocket-key"]}${guid}`).digest("base64");
+      socket.write([
+        "HTTP/1.1 101 Switching Protocols",
+        "Connection: Upgrade",
+        "Upgrade: websocket",
+        `Sec-WebSocket-Accept: ${accept}`,
+        "", "",
+      ].join("\r\n"));
+      socket.once("data", (frame) => {
+        const message = JSON.parse(decodeClientFrame(frame).text);
+        assert.equal(message.method, "initialize");
+        socket.write(serverFrame({ payload: JSON.stringify({ id: message.id, ...response }) }));
+      });
+    });
+    server.listen(socketPath);
+    await once(server, "listening");
+    if (error) await assert.rejects(probeAppServer(socketPath), error);
+    else assert.deepEqual(await probeAppServer(socketPath), response.result);
+  });
+}

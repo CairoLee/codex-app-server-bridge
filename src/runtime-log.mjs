@@ -320,6 +320,7 @@ export function createRuntimeLogger({
   }
 
   return {
+    enabled,
     event,
     capture,
     flush,

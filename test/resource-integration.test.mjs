@@ -17,6 +17,13 @@ const resourceCodex = resourceCodexPath();
 const bundledNode =
   "/Applications/ChatGPT.app/Contents/Resources/cua_node/bin/node";
 
+function testEnvironment(overrides) {
+  const env = { ...process.env, ...overrides };
+  // 测试客户端必须独立决定身份，不继承桌面端预设的 originator。
+  delete env.CODEX_INTERNAL_ORIGINATOR_OVERRIDE;
+  return env;
+}
+
 async function waitForExit(pid, timeoutMs = 8_000) {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
@@ -118,11 +125,10 @@ test(
         await waitForExit(serverPid);
       }
       appToolsServer.close();
-      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+      await fs.rm(temporaryDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     });
 
-    const env = {
-      ...process.env,
+    const env = testEnvironment({
       CODEX_HOME: codexHome,
       CODEX_APP_TOOLS_PIPE_PATH: appToolsPipe,
       CODEX_BRIDGE_STATE_DIR: stateDirectory,
@@ -130,7 +136,7 @@ test(
       CODEX_BRIDGE_RESOURCE_PATH: resourceCodex,
       CODEX_BRIDGE_NODE_PATH: bundledNode,
       CODEX_BRIDGE_OWNER_PID: String(process.pid),
-    };
+    });
     const launcher = spawn(bundledNode, [
       launcherPath,
       "-c",
@@ -143,6 +149,7 @@ test(
       env,
       stdio: ["pipe", "pipe", "pipe"],
     });
+    context.after(() => launcher.stdin.end());
     let stderr = "";
     launcher.stderr.setEncoding("utf8");
     launcher.stderr.on("data", (chunk) => {
@@ -163,7 +170,7 @@ test(
     );
     const response = JSON.parse(await readFirstLine(launcher.stdout));
     assert.equal(response.id, 1, stderr);
-    assert.match(response.result.userAgent, /Codex Desktop\/\d/u);
+    assert.match(response.result.userAgent, /^integration_test\/\d/u);
     launcher.stdin.write(
       `${JSON.stringify({ method: "initialized", params: {} })}\n`,
     );
@@ -198,6 +205,7 @@ test(
     assert.equal(statusJson.ok, true);
     assert.equal(statusJson.serverPid, serverPid);
     assert.equal(statusCode, 0);
+    assert.equal(statusJson.appServerVersion, response.result.userAgent);
   },
 );
 
@@ -218,7 +226,7 @@ test(
     await once(sharedSocketServer, "listening");
     context.after(async () => {
       sharedSocketServer.close();
-      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+      await fs.rm(temporaryDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     });
 
     const launcher = spawn(
@@ -231,17 +239,17 @@ test(
         "--analytics-default-enabled",
       ],
       {
-        env: {
-          ...process.env,
+        env: testEnvironment({
           CODEX_HOME: temporaryDirectory,
           CODEX_APP_TOOLS_PIPE_PATH: "",
           CODEX_BRIDGE_RESOURCE_PATH: resourceCodex,
           CODEX_BRIDGE_NODE_PATH: bundledNode,
           CODEX_BRIDGE_SOCKET: sharedSocketPath,
-        },
+        }),
         stdio: ["pipe", "pipe", "pipe"],
       },
     );
+    context.after(() => launcher.stdin.end());
     let stderr = "";
     launcher.stderr.setEncoding("utf8");
     launcher.stderr.on("data", (chunk) => {
@@ -264,7 +272,7 @@ test(
       })}\n`,
     );
     const initialize = await responses.read(1);
-    assert.match(initialize.result.userAgent, /Codex Desktop\/\d/u, stderr);
+    assert.match(initialize.result.userAgent, /^browser_listener_integration_test\/\d/u, stderr);
     launcher.stdin.write(
       `${JSON.stringify({ method: "initialized", params: {} })}\n`,
     );
@@ -294,24 +302,24 @@ test(
       "/tmp/codex-app-server-browser-fallback-",
     );
     context.after(async () => {
-      await fs.rm(temporaryDirectory, { recursive: true, force: true });
+      await fs.rm(temporaryDirectory, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
     });
 
     const launcher = spawn(
       bundledNode,
       [launcherPath, "app-server", "--analytics-default-enabled"],
       {
-        env: {
-          ...process.env,
+        env: testEnvironment({
           CODEX_HOME: temporaryDirectory,
           CODEX_BRIDGE_RESOURCE_PATH: resourceCodex,
           CODEX_BRIDGE_NODE_PATH: bundledNode,
           CODEX_BRIDGE_SOCKET:
             "/var/root/codex-app-server-bridge-browser-test.sock",
-        },
+        }),
         stdio: ["pipe", "pipe", "pipe"],
       },
     );
+    context.after(() => launcher.stdin.end());
     let stderr = "";
     launcher.stderr.setEncoding("utf8");
     launcher.stderr.on("data", (chunk) => {
@@ -334,7 +342,7 @@ test(
       })}\n`,
     );
     const initialize = await responses.read(1);
-    assert.match(initialize.result.userAgent, /Codex Desktop\/\d/u, stderr);
+    assert.match(initialize.result.userAgent, /^browser_fallback_integration_test\/\d/u, stderr);
     launcher.stdin.write(
       `${JSON.stringify({ method: "initialized", params: {} })}\n`,
     );

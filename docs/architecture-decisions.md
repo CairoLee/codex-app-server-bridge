@@ -84,6 +84,15 @@ Supervisor 保存 owner、supervisor 和 server PID，并记录启动它的精�
 Supervisor 同时监控桌面端主进程；桌面端退出后，共享 App Server 随之终止，避免留下无人
 管理的后台实例。
 
+健康检查也会发送 `initialize`。App Server 会用普通客户端的初始化信息设置进程级
+originator 和 User-Agent，因此探测使用上游保留的 non-originating 客户端名
+`codex_app_server_daemon`，并保留 Bridge 自己的 title。探测不能抢先占用真实客户端的
+身份，也不能在运行 `status` 时覆盖它；RPC 错误或缺少有效初始化结果不能算作健康。
+
+stdio 桥接的两个方向共享连接生命周期：服务端断开或输出失败时，及时结束输入等待，
+使桌面端能够察觉断线并按自己的恢复流程处理。已经收到的响应仍按序写出；Bridge
+不自动重放请求，避免重复执行有副作用的操作。
+
 ### 4. 普通 Codex 失败关闭
 
 普通 `codex` 入口在共享实例不可用时返回退出码 69，并提示启动或重新启动 ChatGPT
@@ -217,6 +226,11 @@ Launcher 调用形态只在显式执行 `npm run diag:arm`、创建专用配置�
 
 ## 适用边界与非目标
 
+stdio bridge 的 RPC 日志是旁路观察器，转发文本保持原样；解析失败、日志写入失败和观察
+容量不足不能阻止通讯。仅记录白名单元数据与连接内匿名标记，不保存协议正文。正常请求
+按时间窗口汇总，失败和慢请求明细限速；采集缺口单独计数。待响应观察状态与传输提交状态
+分开，连接关闭时的未完成样本不自动视为服务端故障。详见 README 的运行日志说明。
+
 - 当前只支持 macOS，并假设 ChatGPT Desktop 位于 `/Applications/ChatGPT.app`。
 - Desktop、CLI 和 Remote SSH 必须落到同一台 Mac、同一 macOS 用户，并使用同一个
   `CODEX_HOME`。
@@ -224,6 +238,11 @@ Launcher 调用形态只在显式执行 `npm run diag:arm`、创建专用配置�
 - 项目不负责安装 ChatGPT Desktop，也不修改 standalone 的版本目录。
 - 项目不承诺兼容未来所有 ChatGPT Desktop 内部启动方式；升级后的兼容性必须通过真实
   集成测试确认。
+
+更新独立版 Codex 不会替换共享实例使用的桌面端内嵌二进制。调查配置兼容性时，应使用
+同一内嵌版本、隔离的 `CODEX_HOME` 和相同请求，对比原生 stdio 与 Bridge 的结果。
+Bridge 原样传递配置告警，不删除未知字段或压制通知；直连也能复现的告警需要继续核对
+客户端与内嵌 App Server 的配置契约。
 
 ## 维护和升级检查清单
 

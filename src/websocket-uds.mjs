@@ -359,6 +359,15 @@ export async function probeAppServer(socketPath, options = {}) {
         return;
       }
       if (parsed?.id !== requestId) return;
+      if (parsed.error != null || typeof parsed.result?.userAgent !== "string") {
+        onError(new Error(
+          parsed.error != null
+            ? `Codex App Server initialize failed (code ${parsed.error.code ?? "unknown"})`
+            : "Codex App Server initialize returned no userAgent",
+        ));
+        websocket.destroy();
+        return;
+      }
       cleanup();
       await websocket
         .sendText(JSON.stringify({ method: "initialized", params: {} }))
@@ -384,7 +393,9 @@ export async function probeAppServer(socketPath, options = {}) {
           id: requestId,
           params: {
             clientInfo: {
-              name: "codex_app_server_bridge_probe",
+              // App Server 将此探测身份视为 non-originating client，避免健康
+              // 检查抢先设置进程级 originator 或覆盖真实客户端的 User-Agent。
+              name: "codex_app_server_daemon",
               title: "Codex App Server Bridge Probe",
               version: "1.0.0",
             },
